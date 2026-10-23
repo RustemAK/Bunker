@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>БУНКЕР 3.3 — Терминал Убежища</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Rajdhani:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Ambient CRT Scanline overlay -->
+  <div class="scanlines"></div>
+
+  <!-- Audio Toggle & Status -->
+  <header class="top-nav">
+    <div class="brand">
+      <span class="hazard-icon">☢️</span>
+      <span class="brand-title">БУНКЕР <small>3.3</small></span>
+    </div>
+    <div class="top-meta">
+      <div id="roomBadge" class="room-badge hidden">
+        КОМНАТА: <span id="roomCodeDisplay">----</span>
+      </div>
+      <button id="soundToggleBtn" class="icon-btn" title="Звуки терминала">🔊</button>
+    </div>
+  </header>
+
+  <!-- Notification Toast Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- MAIN APP CONTAINER -->
+  <main class="app-container">
+
+    <!-- SCREEN 1: LOBBY & JOIN -->
+    <section id="screenLobby" class="view-screen active">
+      <div class="lobby-card glass-panel">
+        <div class="terminal-header">
+          <span class="status-dot green"></span>
+          <span>ПРОТОКОЛ АВАРИЙНОЙ ГЕРМЕТИЗАЦИИ #3301</span>
+        </div>
+
+        <div class="lobby-hero">
+          <h1 class="glitch-text" data-text="ВХОД В БУНКЕР">ВХОД В БУНКЕР</h1>
+          <p class="subtitle">Постапокалиптическая игра на выживание и психологический отбор</p>
+        </div>
+
+        <div class="form-group">
+          <label for="playerNameInput">Ваше имя / Позывной:</label>
+          <input type="text" id="playerNameInput" maxlength="18" placeholder="Например: Доктор Хаус или Иван" autocomplete="off">
+        </div>
+
+        <div class="form-group">
+          <label>Выберите аватар выжившего:</label>
+          <div class="avatar-picker" id="avatarPicker">
+            <span class="avatar-opt selected" data-av="👨‍🔬">👨‍🔬</span>
+            <span class="avatar-opt" data-av="👩‍⚕️">👩‍⚕️</span>
+            <span class="avatar-opt" data-av="🕵️">🕵️</span>
+            <span class="avatar-opt" data-av="👨‍🚀">👨‍🚀</span>
+            <span class="avatar-opt" data-av="🤠">🤠</span>
+            <span class="avatar-opt" data-av="🤖">🤖</span>
+            <span class="avatar-opt" data-av="🦹">🦹</span>
+            <span class="avatar-opt" data-av="🧙">🧙</span>
+          </div>
+        </div>
+
+        <div class="lobby-actions">
+          <button id="createRoomBtn" class="btn btn-primary">
+            <span class="btn-icon">⚡</span> СОЗДАТЬ БУНКЕР (ХОСТ)
+          </button>
+          
+          <div class="divider"><span>ИЛИ ВОЙТИ ПО КОДУ</span></div>
+
+          <div class="join-row">
+            <input type="text" id="roomCodeInput" maxlength="4" placeholder="КОД (4 буквы)" class="code-input">
+            <button id="joinRoomBtn" class="btn btn-secondary">ВОЙТИ</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN 2: WAITING ROOM (BEFORE START) -->
+    <section id="screenWaiting" class="view-screen">
+      <div class="glass-panel waiting-panel">
+        <div class="waiting-header">
+          <div>
+            <span class="hazard-badge">ОЖИДАНИЕ ВЫЖИВШИХ</span>
+            <h2>УБЕЖИЩЕ <span id="waitRoomCode" class="text-amber">----</span></h2>
+          </div>
+          <div class="invite-box">
+            <span class="qr-hint">Поделитесь кодом с друзьями:</span>
+            <div id="roomCodeBig" class="room-code-tag">----</div>
+          </div>
+        </div>
+
+        <div class="section-title">В ШЛЮЗЕ БУНКЕРА (<span id="playerCount">0</span> чел.):</div>
+        <div id="lobbyPlayersList" class="lobby-players-grid">
+          <!-- Dynamically populated -->
+        </div>
+
+        <div class="waiting-footer">
+          <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий.</p>
+          <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
+            ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
+          </button>
+          <div id="waitHostNotice" class="wait-notice text-amber">
+            Ожидаем, пока создатель бункера начнёт игру...
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SCREEN 3: MAIN IN-GAME HUD -->
+    <section id="screenGame" class="view-screen">
+      
+      <!-- TOP STATUS BAR: Catastrophe & Round -->
+      <div class="game-hud glass-panel">
+        <div class="hud-left">
+          <div class="round-tracker">
+            РАУНД <span id="currentRoundDisplay" class="round-num">1</span>/5
+          </div>
+          <div class="phase-badge" id="phaseDisplay">ФАЗА: ВСКРЫТИЕ КАРТ</div>
+        </div>
+
+        <div class="hud-center" id="hudCatastropheBanner">
+          <span class="cat-icon" id="catastropheIcon">☢️</span>
+          <div class="cat-info">
+            <div class="cat-label">КАТАСТРОФА МИРА:</div>
+            <div class="cat-name" id="catastropheName">Загрузка данных...</div>
+          </div>
+          <button id="viewCatastropheBtn" class="btn-subtle" title="Подробнее о катастрофе">ℹ️ Инфо</button>
+        </div>
+
+        <div class="hud-right">
+          <div class="speech-timer" id="speechTimerBox">
+            <span class="timer-icon">⏱️</span>
+            <span id="speechTimerNum">30</span>с
+          </div>
+        </div>
+      </div>
+
+      <!-- MAIN TABS: 1. Выжившие (Досье всех) | 2. Мои Карты | 3. Бункер и Угрозы -->
+      <nav class="game-tabs">
+        <button class="tab-btn active" data-tab="tabSurvivors">
+          👥 ВСЕ ВЫЖИВШИЕ (<span id="tabSurvivorsCount">0</span>)
+        </button>
+        <button class="tab-btn" data-tab="tabMyDeck">
+          🗂️ МОИ КАРТЫ <span id="myDeckNotice" class="badge-dot hidden"></span>
+        </button>
+        <button class="tab-btn" data-tab="tabBunker">
+          📦 БУНКЕР И УГРОЗЫ (<span id="tabBunkerRevealed">1/5</span>)
+        </button>
+      </nav>
+
+      <!-- TAB 1: ALL SURVIVORS (GRID + TAP TO VIEW DOSSIER) -->
+      <div id="tabSurvivors" class="tab-content active">
+        <div class="tab-hint">
+          💡 <strong>Нажмите на любого игрока</strong>, чтобы открыть его детальное досье со всеми вскрытыми характеристиками.
+        </div>
+        <div id="survivorsGrid" class="survivors-grid">
+          <!-- Dynamically populated with player cards -->
+        </div>
+
+        <!-- Host Emergency Controls -->
+        <div id="hostControlsRow" class="host-controls-row hidden">
+          <button id="hostStartVotingBtn" class="btn btn-warning">🗳️ Объявить тайное голосование</button>
+        </div>
+      </div>
+
+      <!-- TAB 2: MY DECK & SECRET CARDS -->
+      <div id="tabMyDeck" class="tab-content">
+        <div class="my-deck-header">
+          <div>
+            <h3>ЛИЧНЫЕ КАРТЫ ВЫЖИВШЕГО</h3>
+            <p class="hint-text">Скрытые карты видите только вы. Вскрывайте их в свой ход для аргументации.</p>
+          </div>
+          <div id="myTurnAlert" class="my-turn-alert hidden">
+            🚨 ВАШ ХОД! Выберите карту для вскрытия
+          </div>
+        </div>
+
+        <div id="myCardsGrid" class="cards-grid">
+          <!-- 6 player cards generated here -->
+        </div>
+
+        <!-- Special Condition Card -->
+        <div class="special-condition-panel glass-panel">
+          <div class="special-badge">⚡ ВАШ КОЗЫРЬ: ОСОБОЕ УСЛОВИЕ</div>
+          <h4 id="mySpecialName">Загрузка...</h4>
+          <p id="mySpecialDesc" class="special-desc">Описание условия...</p>
+          <div class="special-footer">
+            <span class="timing-tag" id="mySpecialTiming">В любой момент</span>
+            <button id="playSpecialBtn" class="btn btn-amber">РАЗЫГРАТЬ КОЗЫРЬ</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: BUNKER AND THREATS -->
+      <div id="tabBunker" class="tab-content">
+        <div class="catastrophe-full-card glass-panel">
+          <div class="cat-header">
+            <span class="cat-icon-large" id="catFullIcon">🍄</span>
+            <div>
+              <span class="hazard-badge" id="catFullBadge">БИОЛОГИЧЕСКАЯ УГРОЗА</span>
+              <h2 id="catFullName">Кордицепс</h2>
+            </div>
+          </div>
+          <p id="catFullDesc" class="cat-body">Описание катастрофы...</p>
+          <div class="cat-tip">
+            <strong>Совет по выживанию:</strong> <span id="catFullTip">Требуются медики и фильтры.</span>
+          </div>
+        </div>
+
+        <div class="section-title">ИССЛЕДОВАНИЕ БУНКЕРА (ПО ПАРАМ В КАЖДОМ РАУНДЕ):</div>
+        <div id="bunkerPairsList" class="bunker-pairs-list">
+          <!-- 5 pairs of Bunker + Threat -->
+        </div>
+      </div>
+
+      <!-- Live Action Log at the bottom -->
+      <div class="live-log-container glass-panel">
+        <div class="log-title">ЖУРНАЛ СОБЫТИЙ ШЛЮЗА:</div>
+        <div id="liveLogList" class="log-stream"></div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- MODAL 1: PLAYER DOSSIER (OPENS ON CLICKING ANY PLAYER) -->
+  <div id="dossierModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="dossier-profile">
+          <span class="dossier-avatar" id="dosAvatar">👨‍🔬</span>
+          <div>
+            <h3 id="dosName">Иван</h3>
+            <span id="dosStatusBadge" class="status-pill alive">ЖИВ В БУНКЕРЕ</span>
+          </div>
+        </div>
+        <button id="closeDossierBtn" class="close-modal-btn">✕</button>
+      </div>
+
+      <div class="dossier-body">
+        <div class="dossier-summary-bar">
+          <span>Вскрыто: <strong id="dosRevealedCount">0/6</strong></span>
+          <span>Статус хода: <strong id="dosTurnStatus">Ожидает</strong></span>
+        </div>
+
+        <div id="dosCardsList" class="dossier-cards-list">
+          <!-- Cards of this player rendered with details or classified locks -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: SECRET VOTING MODAL -->
+  <div id="votingModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel voting-card">
+      <div class="modal-header">
+        <div class="dossier-profile">
+          <span class="hazard-icon">🗳️</span>
+          <div>
+            <h3>ТАЙНОЕ ГОЛОСОВАНИЕ: РАУНД <span id="voteRoundNum">1</span></h3>
+            <p class="hint-text">Выберите кандидата на изгнание из убежища</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="voting-body">
+        <p class="vote-instruction">
+          Голос подаётся строго анонимно. Никто не узнает ваш выбор до подсчёта результатов.
+        </p>
+        <div id="candidatesList" class="candidates-grid">
+          <!-- Candidates buttons -->
+        </div>
+      </div>
+
+      <div class="voting-footer">
+        <button id="submitVoteBtn" class="btn btn-danger btn-block" disabled>
+          ОТДАТЬ ГОЛОС НА ИЗГНАНИЕ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: VOTE RESULTS & EXILE ANNOUNCEMENT -->
+  <div id="voteResultsModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel exile-card">
+      <div class="exile-badge">❌ ВЕРДИКТ СОВЕТА БУНКЕРА</div>
+      <h2 id="exileTitle">Игрок изгнан!</h2>
+      <p id="exileDesc">Большинством голосов жильцы бункера решили изгнать...</p>
+
+      <div class="votes-breakdown" id="votesBreakdownBox">
+        <!-- Who got how many votes -->
+      </div>
+
+      <p class="rule-reminder">
+        ℹ️ <em>Правило Редакции 3.3:</em> Изгнанный вскрывает все свои оставшиеся карты, но <strong>не покидает игру</strong> — он продолжает полноценно голосовать в следующих раундах!
+      </p>
+
+      <div id="hostNextRoundBtnBox" class="modal-footer hidden">
+        <button id="confirmNextRoundBtn" class="btn btn-primary btn-block">
+          ПЕРЕЙТИ К СЛЕДУЮЩЕМУ РАУНДУ ➡️
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 4: SURVIVAL FINALE -->
+  <div id="finaleModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel finale-card">
+      <div class="hazard-badge">🏁 ФИНАЛЬНОЕ ИСПЫТАНИЕ</div>
+      <h2>ИСТОРИЯ ВЫЖИВАНИЯ (ФИНАЛ)</h2>
+      <p>5 раундов позади. Защитные двери бункера запечатаны ровно на 1 год.</p>
+
+      <div class="finale-stages">
+        <div class="finale-stage-box">
+          <h4>Этап 1: Главная Угроза убежища</h4>
+          <p id="finaleThreatName">Проверка на прочность...</p>
+        </div>
+        <div class="finale-stage-box">
+          <h4>Этап 2: Преодоление Катастрофы</h4>
+          <p id="finaleCatName">Проверка ресурсов группы...</p>
+        </div>
+      </div>
+
+      <p class="hint-text">
+        Выжившие вскрыли свои последние секретные 6-е карты! Совместными усилиями всех профессий, багажа и отсеков оцените шанс человечества на спасение.
+      </p>
+
+      <button id="newGameHostBtn" class="btn btn-primary btn-block hidden">
+        🔄 НАЧАТЬ НОВУЮ ПАРТИЮ
+      </button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
