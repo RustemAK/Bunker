@@ -609,8 +609,9 @@ async def ws_handler(websocket):
 
 async def main():
     host = "0.0.0.0"
-    port = 8000
+    port = int(os.environ.get("PORT", 8000))
     local_ip = get_local_ip()
+
 
     print("=" * 64)
     try:
