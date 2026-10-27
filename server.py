@@ -78,13 +78,46 @@ class Room:
         self.active_turn_index = 0
         self.timer_seconds = 0
         self.timer_task = None
+        self.timer_paused = False
         self.log = []
         self.votes = {}  # target_id -> list of voter names (for reveal)
         self.last_exiled = None
         self.ai_analysis = None
         self.ai_loading = False
 
+    def stop_timer(self):
+        if self.timer_task and not self.timer_task.done():
+            self.timer_task.cancel()
+        self.timer_task = None
+        self.timer_paused = False
+
+    def start_timer(self, seconds, auto_phase_on_zero=None):
+        self.stop_timer()
+        self.timer_seconds = seconds
+        self.timer_paused = False
+        self.timer_task = asyncio.create_task(self._timer_loop(auto_phase_on_zero))
+
+    async def _timer_loop(self, auto_phase_on_zero):
+        try:
+            while self.timer_seconds > 0:
+                await asyncio.sleep(1)
+                if not self.timer_paused:
+                    self.timer_seconds -= 1
+                    await broadcast_timer_tick(self)
+
+            if auto_phase_on_zero == "voting" and self.phase == "debate":
+                self.phase = "voting"
+                for p in self.players.values():
+                    p.voted_for = None
+                self.add_log(f"🗳️ Время дебатов истекло! Начинается тайное голосование Раунда {self.round}.")
+                await broadcast_room(self)
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            print(f"[Timer loop error: {e}]")
+
     def add_log(self, text):
+
 
         self.log.append(text)
         if len(self.log) > 40:
@@ -166,6 +199,7 @@ class Room:
             "bunker_threat_pairs": pairs_data,
             "active_player_id": self.get_active_player_id(),
             "timer_seconds": self.timer_seconds,
+            "timer_paused": self.timer_paused,
             "players": players_data,
             "log": self.log[-15:],
             "last_exiled": self.last_exiled,
@@ -175,7 +209,21 @@ class Room:
         }
 
 
+async def broadcast_timer_tick(room):
+    msg = json.dumps({
+        "type": "timer_tick",
+        "seconds": room.timer_seconds,
+        "paused": room.timer_paused
+    })
+    for pid, player in list(room.players.items()):
+        if player.ws and player.is_connected:
+            try:
+                await player.ws.send(msg)
+            except Exception:
+                player.is_connected = False
+
 async def broadcast_room(room):
+
     for pid, player in list(room.players.items()):
         if player.ws and player.is_connected:
             try:
@@ -245,6 +293,7 @@ def init_game(room):
     room.add_log(f"🚨 ТРЕВОГА! Началась катастрофа: «{room.catastrophe['name']}»")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
     room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию!")
+    room.start_timer(45)
 
 def next_player_turn(room):
     non_exiled = [pid for pid in room.turn_order if not room.players[pid].is_exiled]
@@ -252,7 +301,6 @@ def next_player_turn(room):
         return
 
     # Check if all non-exiled players have revealed a card in this round
-    # We count how many cards should be revealed: round number = number of revealed cards
     curr_target_revealed = room.round
     unrevealed_exist = False
     for pid in non_exiled:
@@ -265,8 +313,8 @@ def next_player_turn(room):
     if not unrevealed_exist:
         # All players opened cards for this round -> Move to debate / voting phase
         room.phase = "debate"
-        room.timer_seconds = 60
         room.add_log(f"⚖️ Раунд {room.round}: Все карты вскрыты! Фаза общего обсуждения (1 минута).")
+        room.start_timer(60, auto_phase_on_zero="voting")
     else:
         # Move to next player who needs to reveal
         for _ in range(len(room.turn_order)):
@@ -278,6 +326,8 @@ def next_player_turn(room):
                 break
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"👉 Ход переходит к: {active_p.name}. Выберите карту для вскрытия!")
+        room.start_timer(45)
+
 
 def resolve_voting(room):
     # Collect votes
@@ -299,6 +349,7 @@ def resolve_voting(room):
     }
 
     if not vote_counts:
+        room.stop_timer()
         room.add_log("⚖️ Голоса не были поданы. Никто не изгнан в этом раунде.")
         advance_round(room)
         return
@@ -323,6 +374,7 @@ def resolve_voting(room):
     for cat, c in exiled_player.hand.items():
         c["revealed"] = True
 
+    room.stop_timer()
     room.phase = "vote_results"
     room.add_log(f"❌ ИЗГНАНИЕ: Игрок {exiled_player.name} изгнан из Бункера большинством голосов ({max_votes})!")
     room.add_log(f"📢 Все оставшиеся карты {exiled_player.name} вскрыты. Он остаётся в игре с правом голоса.")
@@ -330,6 +382,7 @@ def resolve_voting(room):
 def advance_round(room):
     if room.round >= room.max_rounds:
         # Move to FINALE!
+        room.stop_timer()
         room.status = "finale"
         room.phase = "finale"
         # Reveal 6th card for survivors
@@ -361,8 +414,10 @@ def advance_round(room):
 
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
+        room.start_timer(45)
 
 def procedural_ai_analysis(cat, survivors, exiled, revealed_bunkers, revealed_threats):
+
     if not survivors:
         return {
             "survival_percent": 0,
@@ -693,15 +748,53 @@ async def ws_handler(websocket):
                 next_player_turn(room)
                 await broadcast_room(room)
 
-            elif msg_type == "start_voting":
+            elif msg_type in ("start_voting", "skip_debate"):
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
                 room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                room.stop_timer()
                 room.phase = "voting"
                 for p in room.players.values():
                     p.voted_for = None
-                room.add_log(f"🗳️ Голосование Раунда {room.round} открыто! Сделайте тайный выбор на экране.")
+                room.add_log(f"🗳️ Командир завершил дебаты! Тайное голосование Раунда {room.round} открыто.")
                 await broadcast_room(room)
+
+            elif msg_type == "extend_timer":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                add_sec = int(data.get("seconds", 30))
+                room.timer_seconds += add_sec
+                room.add_log(f"⏱️ Командир продлил таймер на +{add_sec} сек.")
+                await broadcast_timer_tick(room)
+                await broadcast_room(room)
+
+            elif msg_type == "toggle_pause_timer":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                room.timer_paused = not room.timer_paused
+                status_txt = "поставлен на паузу ⏸️" if room.timer_paused else "возобновлён ⏵"
+                room.add_log(f"⏱️ Таймер {status_txt}.")
+                await broadcast_timer_tick(room)
+                await broadcast_room(room)
+
+            elif msg_type == "force_next_turn":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                room.add_log("👉 Командир принудительно передал ход следующему выжившему.")
+                next_player_turn(room)
+                await broadcast_room(room)
+
 
             elif msg_type == "cast_vote":
                 if not current_room_code or current_room_code not in ROOMS:

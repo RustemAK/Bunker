@@ -141,8 +141,45 @@
         </div>
       </div>
 
+      <!-- PHASE DEBATE BANNER -->
+      <div id="debateBanner" class="debate-banner glass-panel hidden">
+        <div class="debate-badge">⚖️ ФАЗА ОБЩЕГО ОБСУЖДЕНИЯ (ДЕБАТЫ)</div>
+        <div class="debate-row">
+          <div class="debate-text">
+            <h3>Время открытой дискуссии перед голосованием</h3>
+            <p class="hint-text">Все игроки вскрыли карты раунда! Обсудите кандидатов на изгнание.</p>
+          </div>
+          <div class="debate-countdown">
+            <span id="debateCountdownNum">60</span><small>сек</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROMINENT HOST COMMAND BAR -->
+      <div id="hostCommandBar" class="host-command-bar glass-panel hidden">
+        <div class="host-bar-header">
+          <span class="hazard-badge">👑 ПУЛЬТ КОМАНДИРА БУНКЕРА</span>
+          <span id="hostTimerStatus" class="host-timer-status text-amber">⏱️ Таймер активен</span>
+        </div>
+        <div class="host-bar-btn-group">
+          <button id="hostSkipDebateBtn" class="btn btn-danger btn-sm">
+            ⏩ Пропустить дебаты / Голосовать
+          </button>
+          <button id="hostExtendTimerBtn" class="btn btn-amber btn-sm">
+            ⏱️ +30 сек
+          </button>
+          <button id="hostPauseTimerBtn" class="btn btn-secondary btn-sm">
+            ⏸️ Пауза / ⏵ Пуск
+          </button>
+          <button id="hostNextTurnBtn" class="btn btn-secondary btn-sm">
+            👉 След. ход
+          </button>
+        </div>
+      </div>
+
       <!-- MAIN TABS: 1. Выжившие (Досье всех) | 2. Мои Карты | 3. Бункер и Угрозы -->
       <nav class="game-tabs">
+
         <button class="tab-btn active" data-tab="tabSurvivors">
           👥 ВСЕ ВЫЖИВШИЕ (<span id="tabSurvivorsCount">0</span>)
         </button>

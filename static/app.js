@@ -101,6 +101,17 @@
   const hostControlsRow = document.getElementById('hostControlsRow');
   const hostStartVotingBtn = document.getElementById('hostStartVotingBtn');
 
+  // Debate & Host Command Bar
+  const debateBanner = document.getElementById('debateBanner');
+  const debateCountdownNum = document.getElementById('debateCountdownNum');
+  const hostCommandBar = document.getElementById('hostCommandBar');
+  const hostTimerStatus = document.getElementById('hostTimerStatus');
+  const hostSkipDebateBtn = document.getElementById('hostSkipDebateBtn');
+  const hostExtendTimerBtn = document.getElementById('hostExtendTimerBtn');
+  const hostPauseTimerBtn = document.getElementById('hostPauseTimerBtn');
+  const hostNextTurnBtn = document.getElementById('hostNextTurnBtn');
+
+
   // Special Card
   const mySpecialName = document.getElementById('mySpecialName');
   const mySpecialDesc = document.getElementById('mySpecialDesc');
@@ -285,7 +296,22 @@
       return;
     }
 
+    if (msg.type === 'timer_tick') {
+      const sec = msg.seconds;
+      if (speechTimerNum) speechTimerNum.textContent = sec;
+      if (debateCountdownNum) debateCountdownNum.textContent = sec;
+      if (hostTimerStatus) {
+        hostTimerStatus.textContent = msg.paused ? '⏸️ Таймер на паузе' : `⏱️ Осталось: ${sec}с`;
+        hostTimerStatus.className = msg.paused ? 'host-timer-status text-danger' : 'host-timer-status text-amber';
+      }
+      if (sec <= 5 && sec > 0) {
+        soundClick();
+      }
+      return;
+    }
+
     if (msg.type === 'room_joined') {
+
       myId = msg.my_id;
       currentRoomCode = msg.room_code;
       localStorage.setItem('bunker_player_id', myId);
@@ -392,25 +418,53 @@
     }
 
     // Timer display
-    speechTimerNum.textContent = gameState.timer_seconds || 30;
+    const currentSec = gameState.timer_seconds || 0;
+    speechTimerNum.textContent = currentSec;
+
+    // Debate Banner visibility
+    if (gameState.phase === 'debate') {
+      debateBanner.classList.remove('hidden');
+      debateCountdownNum.textContent = currentSec;
+    } else {
+      debateBanner.classList.add('hidden');
+    }
+
+    // Host Command Bar visibility (always available to host during active game rounds)
+    const isHost = (gameState.host_id === gameState.my_id);
+    if (isHost && gameState.status === 'in_game') {
+      hostCommandBar.classList.remove('hidden');
+      if (hostTimerStatus) {
+        hostTimerStatus.textContent = gameState.timer_paused ? '⏸️ Таймер на паузе' : `⏱️ Осталось: ${currentSec}с`;
+        hostTimerStatus.className = gameState.timer_paused ? 'host-timer-status text-danger' : 'host-timer-status text-amber';
+      }
+
+      if (gameState.phase === 'debate') {
+        hostSkipDebateBtn.textContent = '⏩ Пропустить дебаты / Голосовать';
+        hostSkipDebateBtn.classList.remove('hidden');
+        hostNextTurnBtn.classList.add('hidden');
+      } else if (gameState.phase === 'turns') {
+        hostSkipDebateBtn.textContent = '🗳️ Начать голосование досрочно';
+        hostSkipDebateBtn.classList.remove('hidden');
+        hostNextTurnBtn.classList.remove('hidden');
+      } else {
+        hostSkipDebateBtn.classList.add('hidden');
+        hostNextTurnBtn.classList.add('hidden');
+      }
+    } else {
+      hostCommandBar.classList.add('hidden');
+    }
 
     // Tabs info
-    document.getElementById('tabSurvivorsCount').textContent = gameState.players.length;
-    const revPairs = gameState.bunker_threat_pairs.filter(p => p.revealed).length;
-    document.getElementById('tabBunkerRevealed').textContent = `${revPairs}/5`;
+    const survivorsCountEl = document.getElementById('tabSurvivorsCount');
+    if (survivorsCountEl) survivorsCountEl.textContent = (gameState.players || []).length;
+    const revPairs = (gameState.bunker_threat_pairs || []).filter(p => p.revealed).length;
+    const bunkerRevEl = document.getElementById('tabBunkerRevealed');
+    if (bunkerRevEl) bunkerRevEl.textContent = `${revPairs}/5`;
 
     renderSurvivorsGrid();
     renderMyDeck();
     renderBunkerTab();
     renderLiveLog();
-
-    // Host emergency controls
-    const isHost = (gameState.host_id === gameState.my_id);
-    if (isHost && gameState.phase === 'turns') {
-      hostControlsRow.classList.remove('hidden');
-    } else {
-      hostControlsRow.classList.add('hidden');
-    }
 
     // Modal triggers based on phase
     if (gameState.phase === 'voting') {
@@ -852,6 +906,39 @@
     soundAlarm();
     ws.send(jsonStr({ action: 'reset_game' }));
   });
+
+  // --- HOST COMMAND BAR EVENT LISTENERS ---
+  if (hostSkipDebateBtn) {
+    hostSkipDebateBtn.addEventListener('click', () => {
+      initAudio();
+      soundAlarm();
+      ws.send(jsonStr({ action: 'skip_debate' }));
+    });
+  }
+
+  if (hostExtendTimerBtn) {
+    hostExtendTimerBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'extend_timer', seconds: 30 }));
+    });
+  }
+
+  if (hostPauseTimerBtn) {
+    hostPauseTimerBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'toggle_pause_timer' }));
+    });
+  }
+
+  if (hostNextTurnBtn) {
+    hostNextTurnBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'force_next_turn' }));
+    });
+  }
 
   // --- LIVE LOG ---
   function renderLiveLog() {
