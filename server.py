@@ -63,6 +63,36 @@ class Player:
         self.voted_for = None
         self.immunity_this_round = False
 
+# Official Bunker 3.3 Exile Schedule per Player Count (N: {round: exiles})
+EXILE_SCHEDULE = {
+    2:  {1: 0, 2: 0, 3: 0, 4: 0, 5: 1},  # 1 in bunker, 1 exiled at round 5
+    3:  {1: 0, 2: 0, 3: 0, 4: 1, 5: 1},  # 1 in bunker, 2 exiled
+    4:  {1: 0, 2: 0, 3: 0, 4: 1, 5: 1},  # 2 in bunker, 2 exiled
+    5:  {1: 0, 2: 0, 3: 1, 4: 1, 5: 1},  # 2 in bunker, 3 exiled
+    6:  {1: 0, 2: 0, 3: 1, 4: 1, 5: 1},  # 3 in bunker, 3 exiled
+    7:  {1: 0, 2: 1, 3: 1, 4: 1, 5: 1},  # 3 in bunker, 4 exiled
+    8:  {1: 0, 2: 1, 3: 1, 4: 1, 5: 1},  # 4 in bunker, 4 exiled
+    9:  {1: 0, 2: 1, 3: 1, 4: 1, 5: 2},  # 4 in bunker, 5 exiled (2 exiles in R5)
+    10: {1: 0, 2: 1, 3: 1, 4: 1, 5: 2},  # 5 in bunker, 5 exiled
+    11: {1: 0, 2: 1, 3: 1, 4: 2, 5: 2},  # 5 in bunker, 6 exiled
+    12: {1: 0, 2: 1, 3: 1, 4: 2, 5: 2},  # 6 in bunker, 6 exiled
+    13: {1: 0, 2: 1, 3: 2, 4: 2, 5: 2},  # 6 in bunker, 7 exiled
+    14: {1: 0, 2: 1, 3: 2, 4: 2, 5: 2},  # 7 in bunker, 7 exiled
+    15: {1: 0, 2: 2, 3: 2, 4: 2, 5: 2},  # 7 in bunker, 8 exiled
+    16: {1: 0, 2: 2, 3: 2, 4: 2, 5: 2},  # 8 in bunker, 8 exiled
+}
+
+def get_exiles_for_round(total_players: int, round_num: int) -> int:
+    if total_players in EXILE_SCHEDULE:
+        return EXILE_SCHEDULE[total_players].get(round_num, 0)
+    if round_num == 1:
+        return 0
+    bunker_capacity = max(1, total_players // 2)
+    total_exiles_needed = total_players - bunker_capacity
+    if round_num < 5:
+        return 1 if total_exiles_needed >= (5 - round_num) else 0
+    return max(0, total_exiles_needed)
+
 class Room:
     def __init__(self, code, host_id):
         self.code = code
@@ -85,6 +115,16 @@ class Room:
         self.ai_analysis = None
         self.ai_loading = False
 
+    def get_bunker_capacity(self):
+        return max(1, len(self.players) // 2)
+
+    def get_exiles_for_current_round(self):
+        return get_exiles_for_round(len(self.players), self.round)
+
+    def has_voting_in_round(self, round_num=None):
+        r = round_num if round_num is not None else self.round
+        return get_exiles_for_round(len(self.players), r) > 0
+
     def stop_timer(self):
         if self.timer_task and not self.timer_task.done():
             self.timer_task.cancel()
@@ -106,10 +146,14 @@ class Room:
                     await broadcast_timer_tick(self)
 
             if auto_phase_on_zero == "voting" and self.phase == "debate":
-                self.phase = "voting"
-                for p in self.players.values():
-                    p.voted_for = None
-                self.add_log(f"🗳️ Время дебатов истекло! Начинается тайное голосование Раунда {self.round}.")
+                if self.has_voting_in_round(self.round):
+                    self.phase = "voting"
+                    for p in self.players.values():
+                        p.voted_for = None
+                    self.add_log(f"🗳️ Время дебатов истекло! Начинается тайное голосование Раунда {self.round}.")
+                else:
+                    self.add_log(f"⚖️ Время обсуждения Раунда {self.round} истекло. В этом раунде никто не изгоняется — переход к Раунду {self.round + 1}!")
+                    advance_round(self)
                 await broadcast_room(self)
         except asyncio.CancelledError:
             pass
@@ -195,6 +239,11 @@ class Room:
             "round": self.round,
             "max_rounds": self.max_rounds,
             "phase": self.phase,
+            "bunker_capacity": self.get_bunker_capacity(),
+            "total_players": len(self.players),
+            "survivors_count": sum(1 for p in self.players.values() if not p.is_exiled),
+            "round_has_voting": self.has_voting_in_round(),
+            "round_exiles_count": self.get_exiles_for_current_round(),
             "catastrophe": self.catastrophe,
             "bunker_threat_pairs": pairs_data,
             "active_player_id": self.get_active_player_id(),
@@ -290,9 +339,11 @@ def init_game(room):
         }
         p.special_condition = {**spc_deck[i], "played": False}
 
+    bunker_capacity = room.get_bunker_capacity()
     room.add_log(f"🚨 ТРЕВОГА! Началась катастрофа: «{room.catastrophe['name']}»")
+    room.add_log(f"🛡️ Вместимость бункера: {bunker_capacity} из {len(p_keys)} выживших (половина участников).")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
-    room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию!")
+    room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию! (В 1-м раунде изгнания нет)")
     room.start_timer(45)
 
 def next_player_turn(room):
@@ -311,9 +362,13 @@ def next_player_turn(room):
             break
 
     if not unrevealed_exist:
-        # All players opened cards for this round -> Move to debate / voting phase
+        # All players opened cards for this round -> Move to debate phase
         room.phase = "debate"
-        room.add_log(f"⚖️ Раунд {room.round}: Все карты вскрыты! Фаза общего обсуждения (1 минута).")
+        exiles = room.get_exiles_for_current_round()
+        if exiles > 0:
+            room.add_log(f"⚖️ Раунд {room.round}: Все карты вскрыты! Фаза открытых дебатов перед голосованием (будет изгнан: {exiles}).")
+        else:
+            room.add_log(f"⚖️ Раунд {room.round}: Все карты вскрыты! Фаза обсуждения (по правилам в этом раунде никто не изгоняется).")
         room.start_timer(60, auto_phase_on_zero="voting")
     else:
         # Move to next player who needs to reveal
@@ -330,16 +385,17 @@ def next_player_turn(room):
 
 
 def resolve_voting(room):
-    # Collect votes
+    # Collect votes only from NON-EXILED players
     vote_counts = {}
     voter_map = {}
     for pid, p in room.players.items():
-        if p.voted_for:
+        if not p.is_exiled and p.voted_for:
             target = p.voted_for
-            vote_counts[target] = vote_counts.get(target, 0) + 1
-            if target not in voter_map:
-                voter_map[target] = []
-            voter_map[target].append(p.name)
+            if target in room.players and not room.players[target].is_exiled:
+                vote_counts[target] = vote_counts.get(target, 0) + 1
+                if target not in voter_map:
+                    voter_map[target] = []
+                voter_map[target].append(p.name)
 
     room.votes = {
         room.players[tid].name: {
@@ -354,30 +410,28 @@ def resolve_voting(room):
         advance_round(room)
         return
 
-    # Find highest votes
-    max_votes = max(vote_counts.values())
-    candidates = [tid for tid, cnt in vote_counts.items() if cnt == max_votes]
+    num_exiles = max(1, room.get_exiles_for_current_round())
+    sorted_candidates = sorted(
+        vote_counts.keys(),
+        key=lambda tid: (vote_counts[tid], random.random()),
+        reverse=True
+    )
+    to_exile_ids = sorted_candidates[:min(num_exiles, len(sorted_candidates))]
 
-    exiled_id = None
-    if len(candidates) == 1:
-        exiled_id = candidates[0]
-    else:
-        # Tie breaker: random draw among tied candidates
-        exiled_id = random.choice(candidates)
-        room.add_log(f"⚖️ Ничья среди кандидатов! Жребий бункера решил исход.")
+    exiled_names = []
+    for exiled_id in to_exile_ids:
+        exiled_player = room.players[exiled_id]
+        exiled_player.is_exiled = True
+        exiled_names.append(exiled_player.name)
+        # In Bunker, exiled player reveals all remaining cards!
+        for cat, c in exiled_player.hand.items():
+            c["revealed"] = True
 
-    exiled_player = room.players[exiled_id]
-    exiled_player.is_exiled = True
-    room.last_exiled = exiled_player.name
-
-    # In Bunker 3.3, exiled player immediately reveals ALL remaining cards!
-    for cat, c in exiled_player.hand.items():
-        c["revealed"] = True
-
+    room.last_exiled = ", ".join(exiled_names)
     room.stop_timer()
     room.phase = "vote_results"
-    room.add_log(f"❌ ИЗГНАНИЕ: Игрок {exiled_player.name} изгнан из Бункера большинством голосов ({max_votes})!")
-    room.add_log(f"📢 Все оставшиеся карты {exiled_player.name} вскрыты. Он остаётся в игре с правом голоса.")
+    room.add_log(f"❌ ИЗГНАНИЕ: {room.last_exiled} покидает(ют) Бункер по итогам голосования!")
+    room.add_log(f"📢 Все карты {room.last_exiled} вскрыты. Изгнанные участники больше не участвуют в голосовании.")
 
 def advance_round(room):
     if room.round >= room.max_rounds:
@@ -755,10 +809,14 @@ async def ws_handler(websocket):
                 if current_player_id != room.host_id:
                     continue
                 room.stop_timer()
-                room.phase = "voting"
-                for p in room.players.values():
-                    p.voted_for = None
-                room.add_log(f"🗳️ Командир завершил дебаты! Тайное голосование Раунда {room.round} открыто.")
+                if room.has_voting_in_round(room.round):
+                    room.phase = "voting"
+                    for p in room.players.values():
+                        p.voted_for = None
+                    room.add_log(f"🗳️ Командир завершил дебаты! Тайное голосование Раунда {room.round} открыто.")
+                else:
+                    room.add_log(f"⏩ Командир завершил Раунд {room.round}. По правилам никто не изгоняется — переход к Раунду {room.round + 1}.")
+                    advance_round(room)
                 await broadcast_room(room)
 
             elif msg_type == "extend_timer":
@@ -803,16 +861,23 @@ async def ws_handler(websocket):
                 if room.phase != "voting":
                     continue
 
-                target_id = data.get("target_id")
                 voter = room.players.get(current_player_id)
-                if not voter or target_id not in room.players:
+                if not voter or voter.is_exiled:
+                    # Exiled players do NOT vote
+                    continue
+
+                target_id = data.get("target_id")
+                target_player = room.players.get(target_id)
+                if not target_player or target_player.is_exiled:
+                    # Cannot vote for an exiled player
                     continue
 
                 voter.voted_for = target_id
                 room.add_log(f"📝 {voter.name} заполнил тайный бюллетень.")
 
-                # Check if all eligible players voted
-                all_voted = all(p.voted_for is not None for p in room.players.values() if p.is_connected)
+                # Check if all eligible (non-exiled and connected) players voted
+                eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected]
+                all_voted = len(eligible) > 0 and all(p.voted_for is not None for p in eligible)
                 if all_voted:
                     resolve_voting(room)
 

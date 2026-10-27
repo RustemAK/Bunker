@@ -629,6 +629,25 @@ input[type="text"]:focus {
   font-size: 1.5rem;
 }
 
+.capacity-badge {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+
+.lobby-capacity-info {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  display: inline-block;
+}
+
 .phase-badge {
   font-family: var(--font-mono);
   font-size: 0.75rem;

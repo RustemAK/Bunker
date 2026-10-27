@@ -96,12 +96,15 @@
         </div>
 
         <div class="section-title">В ШЛЮЗЕ БУНКЕРА (<span id="playerCount">0</span> чел.):</div>
+        <div id="lobbyCapacityBox" class="lobby-capacity-info text-amber">
+          🛡️ МЕСТ В БУНКЕРЕ: <strong id="lobbyCapacityNum">--</strong> (спастись сможет половина участников)
+        </div>
         <div id="lobbyPlayersList" class="lobby-players-grid">
           <!-- Dynamically populated -->
         </div>
 
         <div class="waiting-footer">
-          <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий.</p>
+          <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий (поддерживается 2–16).</p>
           <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
             ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
           </button>
@@ -120,6 +123,9 @@
         <div class="hud-left">
           <div class="round-tracker">
             РАУНД <span id="currentRoundDisplay" class="round-num">1</span>/5
+          </div>
+          <div class="capacity-badge" id="hudCapacityBadge">
+            🛡️ МЕСТ В БУНКЕРЕ: <span id="hudCapacityDisplay" class="text-amber">--</span>
           </div>
           <div class="phase-badge" id="phaseDisplay">ФАЗА: ВСКРЫТИЕ КАРТ</div>
         </div>
@@ -143,11 +149,11 @@
 
       <!-- PHASE DEBATE BANNER -->
       <div id="debateBanner" class="debate-banner glass-panel hidden">
-        <div class="debate-badge">⚖️ ФАЗА ОБЩЕГО ОБСУЖДЕНИЯ (ДЕБАТЫ)</div>
+        <div class="debate-badge" id="debateBadgeTitle">⚖️ ФАЗА ОБЩЕГО ОБСУЖДЕНИЯ (ДЕБАТЫ)</div>
         <div class="debate-row">
           <div class="debate-text">
-            <h3>Время открытой дискуссии перед голосованием</h3>
-            <p class="hint-text">Все игроки вскрыли карты раунда! Обсудите кандидатов на изгнание.</p>
+            <h3 id="debateHeading">Время открытой дискуссии перед голосованием</h3>
+            <p class="hint-text" id="debateHint">Все игроки вскрыли карты раунда! Обсудите кандидатов на изгнание.</p>
           </div>
           <div class="debate-countdown">
             <span id="debateCountdownNum">60</span><small>сек</small>

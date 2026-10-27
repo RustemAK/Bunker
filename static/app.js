@@ -369,6 +369,11 @@
     roomCodeBig.textContent = gameState.room_code;
     playerCount.textContent = gameState.players.length;
 
+    const n = gameState.players.length;
+    const capacity = Math.max(1, Math.floor(n / 2));
+    const lobbyCapNum = document.getElementById('lobbyCapacityNum');
+    if (lobbyCapNum) lobbyCapNum.textContent = `${capacity} из ${n}`;
+
     lobbyPlayersList.innerHTML = '';
     gameState.players.forEach(p => {
       const card = document.createElement('div');
@@ -421,10 +426,31 @@
     const currentSec = gameState.timer_seconds || 0;
     speechTimerNum.textContent = currentSec;
 
-    // Debate Banner visibility
+    // Bunker Capacity HUD
+    const hudCapEl = document.getElementById('hudCapacityDisplay');
+    if (hudCapEl) {
+      const cap = gameState.bunker_capacity || Math.max(1, Math.floor(gameState.players.length / 2));
+      hudCapEl.textContent = `${cap} из ${gameState.total_players || gameState.players.length}`;
+    }
+
+    // Debate Banner visibility & dynamic description
     if (gameState.phase === 'debate') {
       debateBanner.classList.remove('hidden');
       debateCountdownNum.textContent = currentSec;
+
+      const debateBadgeTitle = document.getElementById('debateBadgeTitle');
+      const debateHeading = document.getElementById('debateHeading');
+      const debateHint = document.getElementById('debateHint');
+
+      if (gameState.round_has_voting) {
+        if (debateBadgeTitle) debateBadgeTitle.textContent = '⚖️ ФАЗА ДЕБАТОВ (ПЕРЕД ГОЛОСОВАНИЕМ)';
+        if (debateHeading) debateHeading.textContent = `Дискуссия перед голосованием Раунда ${gameState.round}`;
+        if (debateHint) debateHint.textContent = `Все карты раунда вскрыты! Обсудите, кто должен покинуть убежище (будет изгнан: ${gameState.round_exiles_count || 1}).`;
+      } else {
+        if (debateBadgeTitle) debateBadgeTitle.textContent = '⚖️ ФАЗА ДЕБАТОВ (БЕЗ ИЗГНАНИЯ)';
+        if (debateHeading) debateHeading.textContent = `Знакомство и анализ шансов (Раунд ${gameState.round})`;
+        if (debateHint) debateHint.textContent = `По правилам в Раунде ${gameState.round} изгнания нет! Все выжившие гарантированно переходят в следующий раунд.`;
+      }
     } else {
       debateBanner.classList.add('hidden');
     }
@@ -439,11 +465,19 @@
       }
 
       if (gameState.phase === 'debate') {
-        hostSkipDebateBtn.textContent = '⏩ Пропустить дебаты / Голосовать';
+        if (gameState.round_has_voting) {
+          hostSkipDebateBtn.textContent = '⏩ Пропустить дебаты / Голосовать';
+        } else {
+          hostSkipDebateBtn.textContent = `⏩ Завершить Раунд ${gameState.round} и продолжить`;
+        }
         hostSkipDebateBtn.classList.remove('hidden');
         hostNextTurnBtn.classList.add('hidden');
       } else if (gameState.phase === 'turns') {
-        hostSkipDebateBtn.textContent = '🗳️ Начать голосование досрочно';
+        if (gameState.round_has_voting) {
+          hostSkipDebateBtn.textContent = '🗳️ Начать голосование досрочно';
+        } else {
+          hostSkipDebateBtn.textContent = `⏩ Завершить Раунд ${gameState.round} досрочно`;
+        }
         hostSkipDebateBtn.classList.remove('hidden');
         hostNextTurnBtn.classList.remove('hidden');
       } else {
@@ -733,6 +767,21 @@
     submitVoteBtn.disabled = true;
 
     const me = gameState.players.find(p => p.id === gameState.my_id);
+    if (me && me.is_exiled) {
+      candidatesList.innerHTML = `
+        <div class="tab-hint" style="text-align: center; color: var(--color-danger); padding: 25px 15px;">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">🚫</div>
+          <strong style="font-size: 1.1rem; color: #fff;">ВЫ ИЗГНАНЫ ИЗ БУНКЕРА</strong>
+          <p style="margin-top: 8px; color: var(--text-dim); font-size: 0.9rem;">
+            Вы лишены права голоса и больше не влияете на выбор оставшихся претендентов на бункер.
+          </p>
+        </div>
+      `;
+      submitVoteBtn.classList.add('hidden');
+      votingModal.classList.remove('hidden');
+      return;
+    }
+
     if (me && me.has_voted) {
       candidatesList.innerHTML = `
         <div class="tab-hint" style="text-align: center;">
