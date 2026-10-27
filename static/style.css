@@ -1660,3 +1660,85 @@ input[type="text"]:focus {
   font-style: italic;
 }
 
+/* ================= TIE DECISION MODAL ================= */
+.tie-card {
+  max-width: 520px;
+  border-color: rgba(245, 158, 11, 0.6);
+  box-shadow: 0 0 50px rgba(245, 158, 11, 0.25);
+  animation: pulseTie 2s infinite ease-in-out;
+}
+
+@keyframes pulseTie {
+  0%, 100% { border-color: rgba(245, 158, 11, 0.5); }
+  50% { border-color: rgba(245, 158, 11, 0.9); }
+}
+
+.tie-candidates-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.tie-candidate-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--color-amber);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.tie-candidate-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tie-candidate-avatar {
+  font-size: 1.8rem;
+}
+
+.tie-candidate-name {
+  font-weight: 700;
+  color: #fff;
+}
+
+.tie-votes-pill {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--color-amber);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-amber);
+}
+
+.tie-rules-box {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px dashed rgba(245, 158, 11, 0.4);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 16px;
+}
+
+.tie-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tie-round-banner {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid var(--color-amber);
+  color: var(--color-amber-light);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  font-size: 0.85rem;
+  margin-bottom: 14px;
+  animation: pulseAlert 1.5s infinite;
+}
+

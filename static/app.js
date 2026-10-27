@@ -157,6 +157,15 @@
   const hostNextRoundBtnBox = document.getElementById('hostNextRoundBtnBox');
   const confirmNextRoundBtn = document.getElementById('confirmNextRoundBtn');
 
+  // Tie Decision Modal
+  const tieDecisionModal = document.getElementById('tieDecisionModal');
+  const tiePromptText = document.getElementById('tiePromptText');
+  const tieCandidatesList = document.getElementById('tieCandidatesList');
+  const tieHostControls = document.getElementById('tieHostControls');
+  const tieWaitingNotice = document.getElementById('tieWaitingNotice');
+  const tieRevoteBtn = document.getElementById('tieRevoteBtn');
+  const tiePostponeBtn = document.getElementById('tiePostponeBtn');
+
   const finaleModal = document.getElementById('finaleModal');
   const aiLaunchPrompt = document.getElementById('aiLaunchPrompt');
   const triggerAiBtn = document.getElementById('triggerAiBtn');
@@ -514,6 +523,12 @@
       renderVotingModal();
     } else {
       votingModal.classList.add('hidden');
+    }
+
+    if (gameState.phase === 'tie_decision') {
+      renderTieDecisionModal();
+    } else if (tieDecisionModal) {
+      tieDecisionModal.classList.add('hidden');
     }
 
     if (gameState.phase === 'vote_results') {
@@ -908,25 +923,42 @@
 
     submitVoteBtn.classList.remove('hidden');
 
+    const isRevote = !!gameState.is_tie_revote;
+    const tiedIds = (gameState.tie_data && gameState.tie_data.tied_candidate_ids) || [];
+
+    if (isRevote) {
+      const banner = document.createElement('div');
+      banner.className = 'tie-round-banner';
+      banner.innerHTML = `
+        <strong>⚖️ ВТОРОЙ ТУР (ПЕРЕГОЛОСОВАНИЕ):</strong><br>
+        Голосуйте за одного из участников ничьей!
+      `;
+      candidatesList.appendChild(banner);
+    }
+
     // Eligible candidates (alive players)
     const candidates = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
 
     candidates.forEach(cand => {
       const isImmune = !!cand.immunity_this_round;
+      const isTiedCandidate = !isRevote || tiedIds.includes(cand.id);
+      const isSelectable = !isImmune && isTiedCandidate;
+
       const item = document.createElement('div');
-      item.className = 'candidate-item' + (isImmune ? ' disabled-immune' : '');
+      item.className = 'candidate-item' + (!isSelectable ? ' disabled-immune' : '');
       item.innerHTML = `
         <span style="font-size: 1.8rem;">${cand.avatar}</span>
         <div>
           <strong style="color: #fff;">${escapeHtml(cand.name)}</strong>
           ${isImmune ? '<span class="hazard-badge" style="background: rgba(245, 158, 11, 0.2); border-color: var(--color-amber); color: var(--color-amber); margin-left: 6px;">🛡️ ИММУНИТЕТ</span>' : ''}
+          ${isRevote && !isTiedCandidate ? '<span class="hazard-badge" style="background: rgba(255, 255, 255, 0.1); color: var(--text-dim); margin-left: 6px;">Вне 2-го тура</span>' : ''}
           <div style="font-size: 0.8rem; color: var(--color-amber);">
             ${cand.hand.profession && cand.hand.profession.revealed ? cand.hand.profession.name : 'Профессия скрыта'}
           </div>
         </div>
       `;
 
-      if (!isImmune) {
+      if (isSelectable) {
         item.addEventListener('click', () => {
           initAudio();
           soundClick();
@@ -936,7 +968,7 @@
           submitVoteBtn.disabled = false;
         });
       } else {
-        item.style.opacity = '0.5';
+        item.style.opacity = '0.35';
         item.style.cursor = 'not-allowed';
       }
 
@@ -953,14 +985,72 @@
     ws.send(jsonStr({ action: 'cast_vote', target_id: selectedVoteCandidateId }));
   });
 
+  // --- TIE DECISION MODAL ---
+  function renderTieDecisionModal() {
+    if (!gameState.tie_data) return;
+
+    const tiedIds = gameState.tie_data.tied_candidate_ids || [];
+    const votesCount = gameState.tie_data.votes_count || 0;
+    tiePromptText.textContent = `Кандидаты набрали равное количество голосов (по ${votesCount}):`;
+    tieCandidatesList.innerHTML = '';
+
+    tiedIds.forEach(pid => {
+      const p = gameState.players.find(pl => pl.id === pid);
+      if (!p) return;
+      const row = document.createElement('div');
+      row.className = 'tie-candidate-row';
+      row.innerHTML = `
+        <div class="tie-candidate-info">
+          <span class="tie-candidate-avatar">${p.avatar}</span>
+          <div>
+            <div class="tie-candidate-name">${escapeHtml(p.name)}</div>
+            <div style="font-size: 0.8rem; color: var(--color-amber);">
+              ${p.hand.profession && p.hand.profession.revealed ? p.hand.profession.name : 'Профессия скрыта'}
+            </div>
+          </div>
+        </div>
+        <div class="tie-votes-pill">${votesCount} голосов</div>
+      `;
+      tieCandidatesList.appendChild(row);
+    });
+
+    const isHost = (gameState.host_id === gameState.my_id);
+    if (isHost) {
+      tieHostControls.classList.remove('hidden');
+      tieWaitingNotice.classList.add('hidden');
+    } else {
+      tieHostControls.classList.add('hidden');
+      tieWaitingNotice.classList.remove('hidden');
+    }
+
+    tieDecisionModal.classList.remove('hidden');
+  }
+
+  if (tieRevoteBtn) {
+    tieRevoteBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'resolve_tie_decision', choice: 'revote' }));
+    });
+  }
+
+  if (tiePostponeBtn) {
+    tiePostponeBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'resolve_tie_decision', choice: 'postpone' }));
+    });
+  }
+
   // --- VOTE RESULTS MODAL ---
   function renderVoteResultsModal() {
-    exileTitle.textContent = gameState.last_exiled ? `Игрок ${gameState.last_exiled} изгнан!` : 'Голоса равны!';
+    exileTitle.textContent = gameState.last_exiled ? `Итог голосования: ${gameState.last_exiled}` : 'Голоса равны!';
     
     votesBreakdownBox.innerHTML = '<strong>Итоги тайного подсчёта:</strong><br>';
     if (gameState.votes_summary) {
       for (const [candName, info] of Object.entries(gameState.votes_summary)) {
-        votesBreakdownBox.innerHTML += `• ${escapeHtml(candName)}: ${info.count} голосов (голоса от: ${info.voters.join(', ')})<br>`;
+        const votersEscaped = (info.voters || []).map(v => escapeHtml(v)).join(', ');
+        votesBreakdownBox.innerHTML += `• ${escapeHtml(candName)}: ${info.count} голосов (голоса от: ${votersEscaped})<br>`;
       }
     }
 

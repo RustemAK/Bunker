@@ -119,6 +119,8 @@ class Room:
         self.ai_loading = False
         self.bunker_capacity_bonus = 0
         self.curfew_active = False
+        self.tie_data = None
+        self.is_tie_revote = False
 
     def get_bunker_capacity(self):
         base = max(1, len(self.players) // 2)
@@ -270,7 +272,9 @@ class Room:
             "players": players_data,
             "log": self.log[-15:],
             "last_exiled": self.last_exiled,
-            "votes_summary": self.votes if self.phase == "vote_results" else None,
+            "votes_summary": self.votes if self.phase in ("vote_results", "tie_decision") else None,
+            "is_tie_revote": getattr(self, "is_tie_revote", False),
+            "tie_data": self.tie_data if self.phase in ("tie_decision", "voting") else None,
             "ai_analysis": self.ai_analysis,
             "ai_loading": self.ai_loading
         }
@@ -308,6 +312,8 @@ def init_game(room):
     room.phase = "turns"
     room.last_exiled = None
     room.votes = {}
+    room.tie_data = None
+    room.is_tie_revote = False
     room.ai_analysis = None
     room.ai_loading = False
 
@@ -446,12 +452,52 @@ def resolve_voting(room):
         return
 
     num_exiles = max(1, room.get_exiles_for_current_round())
-    sorted_candidates = sorted(
+    sorted_unique = sorted(
         vote_counts.keys(),
         key=lambda tid: (vote_counts[tid], random.random()),
         reverse=True
     )
-    to_exile_ids = sorted_candidates[:min(num_exiles, len(sorted_candidates))]
+
+    # 1. If this was a 2nd round revote after a tie:
+    if getattr(room, "is_tie_revote", False):
+        room.is_tie_revote = False
+        top_votes = vote_counts[sorted_unique[0]]
+        revote_tied = [tid for tid in sorted_unique if vote_counts[tid] == top_votes]
+        if len(revote_tied) > 1:
+            # Revote also ended in a tie! Nobody is exiled
+            room.stop_timer()
+            room.tie_data = None
+            room.phase = "vote_results"
+            room.last_exiled = "Никто (Повторная ничья во 2-м туре)"
+            room.add_log("⚖️ ПОВТОРНАЯ НИЧЬЯ: Даже после второго тура переголосования голоса равны! По правилам бункера изгнание отменено — все участники спасены!")
+            return
+        to_exile_ids = sorted_unique[:min(num_exiles, len(sorted_unique))]
+        room.tie_data = None
+
+    # 2. First round of voting: check if there is a tie across the cutoff threshold
+    else:
+        cutoff_votes = vote_counts[sorted_unique[min(num_exiles, len(sorted_unique)) - 1]]
+        tied_at_cutoff = [tid for tid in sorted_unique if vote_counts[tid] == cutoff_votes]
+        guaranteed_exile_ids = [tid for tid in sorted_unique if vote_counts[tid] > cutoff_votes]
+        slots_for_tied = num_exiles - len(guaranteed_exile_ids)
+
+        if len(tied_at_cutoff) > slots_for_tied and slots_for_tied > 0:
+            # TIE DETECTED!
+            room.tie_data = {
+                "tied_candidate_ids": tied_at_cutoff,
+                "tied_candidate_names": [room.players[tid].name for tid in tied_at_cutoff if tid in room.players],
+                "votes_count": cutoff_votes,
+                "guaranteed_exile_ids": guaranteed_exile_ids,
+                "remaining_slots": slots_for_tied
+            }
+            room.stop_timer()
+            room.phase = "tie_decision"
+            names_str = ", ".join(room.tie_data["tied_candidate_names"])
+            room.add_log(f"⚖️ НИЧЬЯ В ГОЛОСОВАНИИ! По {cutoff_votes} голосов набрали: {names_str}.")
+            room.add_log("🤔 Командир бункера принимает решение: провести ПЕРЕГОЛОСОВАНИЕ или ОТЛОЖИТЬ изгнание на 1 раунд.")
+            return
+
+        to_exile_ids = sorted_unique[:min(num_exiles, len(sorted_unique))]
 
     exiled_names = []
     baba_yaga_retaliations = []
@@ -518,6 +564,8 @@ def advance_round(room):
             p.triple_vote = False
             p.is_silenced = False
         room.curfew_active = False
+        room.tie_data = None
+        room.is_tie_revote = False
         
         # Advance turn order
         room.active_turn_index = (room.round - 1) % len(room.turn_order)
@@ -708,9 +756,12 @@ def http_process_request(connection, request):
     if not path or path == "":
         path = "index.html"
 
-    file_path = STATIC_DIR / path
+    file_path = (STATIC_DIR / path).resolve()
     if path == "cards.json":
-        file_path = CARDS_FILE
+        file_path = CARDS_FILE.resolve()
+    elif not file_path.is_relative_to(STATIC_DIR.resolve()):
+        headers = Headers([("Content-Type", "text/plain; charset=utf-8")])
+        return Response(403, "Forbidden", headers, b"403: Forbidden")
 
     if not file_path.is_file() or not file_path.exists():
         headers = Headers([("Content-Type", "text/plain; charset=utf-8")])
@@ -745,7 +796,7 @@ async def ws_handler(websocket):
             msg_type = data.get("action")
 
             if msg_type == "create_room":
-                name = data.get("name", "Игрок 1").strip() or "Командир"
+                name = data.get("name", "Игрок 1").strip()[:24] or "Командир"
                 avatar = data.get("avatar", "👨‍🚀")
                 player_id = "p_" + "".join(random.choices(string.digits, k=6))
                 room_code = generate_room_code()
@@ -769,7 +820,7 @@ async def ws_handler(websocket):
 
             elif msg_type == "join_room":
                 room_code = data.get("room_code", "").strip().upper()
-                name = data.get("name", "").strip() or f"Выживший {random.randint(10,99)}"
+                name = data.get("name", "").strip()[:24] or f"Выживший {random.randint(10,99)}"
                 avatar = data.get("avatar", "🤠")
                 saved_id = data.get("saved_player_id")
 
@@ -932,6 +983,15 @@ async def ws_handler(websocket):
                     }, ensure_ascii=False))
                     continue
 
+                if getattr(room, "is_tie_revote", False) and room.tie_data:
+                    tied_ids = room.tie_data.get("tied_candidate_ids", [])
+                    if target_id not in tied_ids:
+                        await websocket.send(json.dumps({
+                            "type": "error",
+                            "message": "Во 2-м туре можно голосовать только за участников ничьей!"
+                        }, ensure_ascii=False))
+                        continue
+
                 target_id = data.get("target_id")
                 target_player = room.players.get(target_id)
                 if not target_player or target_player.is_exiled:
@@ -949,7 +1009,7 @@ async def ws_handler(websocket):
                 room.add_log(f"📝 {voter.name} заполнил тайный бюллетень.")
 
                 # Check if all eligible (non-exiled and connected) players voted
-                eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected]
+                eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected and not getattr(p, "is_silenced", False)]
                 all_voted = len(eligible) > 0 and all(p.voted_for is not None for p in eligible)
                 if all_voted:
                     resolve_voting(room)
@@ -964,6 +1024,53 @@ async def ws_handler(websocket):
                     continue
                 resolve_voting(room)
                 await broadcast_room(room)
+
+            elif msg_type == "resolve_tie_decision":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                if room.phase != "tie_decision" or not room.tie_data:
+                    continue
+
+                choice = data.get("choice")
+                if choice == "postpone":
+                    guaranteed_ids = room.tie_data.get("guaranteed_exile_ids", [])
+                    room.tie_data = None
+                    room.is_tie_revote = False
+                    room.stop_timer()
+                    room.phase = "vote_results"
+
+                    exiled_names = []
+                    for gid in guaranteed_ids:
+                        gp = room.players.get(gid)
+                        if gp:
+                            gp.is_exiled = True
+                            exiled_names.append(gp.name)
+                            for cat, c in gp.hand.items():
+                                c["revealed"] = True
+
+                    if exiled_names:
+                        room.last_exiled = f"{', '.join(exiled_names)} (изгнание при ничьей отложено)"
+                        room.add_log(f"❌ ИЗГНАНИЕ: {', '.join(exiled_names)} покидает(ют) Бункер.")
+                        room.add_log("⏸️ РЕШЕНИЕ КОМАНДИРА: Изгнание для кандидатов с равными голосами отложено на следующий раунд!")
+                    else:
+                        room.last_exiled = "Никто (Изгнание отложено из-за ничьей)"
+                        room.add_log("⏸️ РЕШЕНИЕ КОМАНДИРА: Ничья! Изгнание в этом раунде отложено — все кандидаты остаются в бункере!")
+
+                    await broadcast_room(room)
+
+                elif choice == "revote":
+                    tied_names = room.tie_data.get("tied_candidate_names", [])
+                    room.is_tie_revote = True
+                    room.phase = "voting"
+                    for p in room.players.values():
+                        p.voted_for = None
+                    names_str = ", ".join(tied_names)
+                    room.add_log(f"🔄 ВТОРОЙ ТУР: Объявлено переголосование! Голосуйте только за: {names_str}.")
+                    room.start_timer(45)
+                    await broadcast_room(room)
 
             elif msg_type == "next_round_confirm":
                 if not current_room_code or current_room_code not in ROOMS:

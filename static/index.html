@@ -352,6 +352,43 @@
     </div>
   </div>
 
+  <!-- MODAL 3.5: TIE DECISION MODAL (НИЧЬЯ В ГОЛОСОВАНИИ) -->
+  <div id="tieDecisionModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel tie-card">
+      <div class="hazard-badge" style="background: rgba(245, 158, 11, 0.2); border-color: var(--color-amber); color: var(--color-amber);">
+        ⚖️ НИЧЬЯ В ГОЛОСОВАНИИ
+      </div>
+      <h2>РАВЕНСТВО ГОЛОСОВ!</h2>
+      <p class="subtitle" id="tiePromptText" style="margin-bottom: 16px;">
+        Голоса выживших разделились поровну между претендентами на изгнание:
+      </p>
+
+      <div id="tieCandidatesList" class="tie-candidates-grid">
+        <!-- Tied candidates rendered here -->
+      </div>
+
+      <div class="tie-rules-box">
+        <strong style="color: var(--color-amber);">Правило совета убежища:</strong>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 6px;">
+          Командир может объявить <strong>Переголосование</strong> (второй тур только между участниками ничьей) или <strong>Отложить изгнание</strong> на следующий раунд (все участники остаются в убежище).
+        </p>
+      </div>
+
+      <div id="tieHostControls" class="tie-actions hidden">
+        <button id="tieRevoteBtn" class="btn btn-warning btn-block">
+          🔄 ПЕРЕГОЛОСОВАНИЕ (2-Й ТУР МЕЖДУ НИМИ)
+        </button>
+        <button id="tiePostponeBtn" class="btn btn-secondary btn-block">
+          ⏸️ ОТЛОЖИТЬ ИЗГНАНИЕ НА 1 РАУНД
+        </button>
+      </div>
+
+      <div id="tieWaitingNotice" class="waiting-notice text-amber">
+        ⏳ Ожидание решения Командира бункера...
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL 4: SURVIVAL FINALE (AI OVERSEER) -->
   <div id="finaleModal" class="modal-overlay hidden">
     <div class="modal-card glass-panel finale-card">
