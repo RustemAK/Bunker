@@ -559,6 +559,9 @@
       if (p.retaliation_active) {
         statusHtml += ' <span class="tile-status" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-danger); color: var(--color-danger);">🐶 Возмездие</span>';
       }
+      if (p.is_silenced) {
+        statusHtml += ' <span class="tile-status" style="background: rgba(148, 163, 184, 0.2); border-color: #94a3b8; color: #94a3b8;">🔇 Молчание</span>';
+      }
 
       // Revealed pills
       let pillsHtml = '';
@@ -740,7 +743,13 @@
     if (!me || !me.special_condition || me.special_condition.played) return;
 
     const spc = me.special_condition;
-    const needsTarget = (spc.id === 'spc_swap_luggage' || spc.id === 'spc_lie_detector');
+    const needsTarget = [
+      'spc_swap_luggage',
+      'spc_lie_detector',
+      'spc_silence',
+      'spc_steal_profession',
+      'spc_swap_health'
+    ].includes(spc.id);
     const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
 
     if (needsTarget) {
@@ -863,6 +872,21 @@
           <strong style="font-size: 1.1rem; color: #fff;">ВЫ ИЗГНАНЫ ИЗ БУНКЕРА</strong>
           <p style="margin-top: 8px; color: var(--text-dim); font-size: 0.9rem;">
             Вы лишены права голоса и больше не влияете на выбор оставшихся претендентов на бункер.
+          </p>
+        </div>
+      `;
+      submitVoteBtn.classList.add('hidden');
+      votingModal.classList.remove('hidden');
+      return;
+    }
+
+    if (me && me.is_silenced) {
+      candidatesList.innerHTML = `
+        <div class="tab-hint" style="text-align: center; color: var(--color-amber); padding: 25px 15px;">
+          <div style="font-size: 2.5rem; margin-bottom: 8px;">🔇</div>
+          <strong style="font-size: 1.1rem; color: #fff;">НА ВАС НАЛОЖЕН ОБЕТ МОЛЧАНИЯ</strong>
+          <p style="margin-top: 8px; color: var(--text-dim); font-size: 0.9rem;">
+            В этом раунде вы лишены права голоса особой картой соперника.
           </p>
         </div>
       `;

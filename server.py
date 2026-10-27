@@ -64,6 +64,7 @@ class Player:
         self.immunity_this_round = False
         self.triple_vote = False
         self.retaliation_active = False
+        self.is_silenced = False
 
 # Official Bunker 3.3 Exile Schedule per Player Count (N: {round: exiles})
 EXILE_SCHEDULE = {
@@ -116,16 +117,27 @@ class Room:
         self.last_exiled = None
         self.ai_analysis = None
         self.ai_loading = False
+        self.bunker_capacity_bonus = 0
+        self.curfew_active = False
 
     def get_bunker_capacity(self):
-        return max(1, len(self.players) // 2)
+        base = max(1, len(self.players) // 2)
+        return base + getattr(self, "bunker_capacity_bonus", 0)
 
     def get_exiles_for_current_round(self):
-        return get_exiles_for_round(len(self.players), self.round)
+        if getattr(self, "curfew_active", False):
+            return 0
+        base_exiles = get_exiles_for_round(len(self.players), self.round)
+        bonus = getattr(self, "bunker_capacity_bonus", 0)
+        if bonus > 0 and self.round >= 4:
+            return max(0, base_exiles - bonus)
+        return base_exiles
 
     def has_voting_in_round(self, round_num=None):
         r = round_num if round_num is not None else self.round
-        return get_exiles_for_round(len(self.players), r) > 0
+        if getattr(self, "curfew_active", False):
+            return False
+        return self.get_exiles_for_current_round() > 0 if r == self.round else get_exiles_for_round(len(self.players), r) > 0
 
     def stop_timer(self):
         if self.timer_task and not self.timer_task.done():
@@ -214,6 +226,7 @@ class Room:
                 "immunity_this_round": p.immunity_this_round,
                 "triple_vote": p.triple_vote,
                 "retaliation_active": p.retaliation_active,
+                "is_silenced": getattr(p, "is_silenced", False),
                 "is_active_turn": (p.id == self.get_active_player_id() and self.status == "in_game" and self.phase == "turns"),
                 "has_voted": (p.voted_for is not None),
                 "hand": sanitized_hand,
@@ -336,6 +349,7 @@ def init_game(room):
         p.immunity_this_round = False
         p.triple_vote = False
         p.retaliation_active = False
+        p.is_silenced = False
         p.hand = {
             "profession": {**prof_deck[i], "category": "profession", "revealed": False},
             "biology": {**bio_deck[i], "category": "biology", "revealed": False},
@@ -392,6 +406,14 @@ def next_player_turn(room):
 
 
 def resolve_voting(room):
+    if getattr(room, "curfew_active", False):
+        room.curfew_active = False
+        room.stop_timer()
+        room.phase = "vote_results"
+        room.last_exiled = "Никто (Комендантский час)"
+        room.add_log("🚨 КОМЕНДАНТСКИЙ ЧАС: Изгнание отменено! Все выжившие остаются в игре и переходят в следующий раунд.")
+        return
+
     # Collect votes only from NON-EXILED players
     vote_counts = {}
     voter_map = {}
@@ -494,6 +516,8 @@ def advance_round(room):
             p.voted_for = None
             p.immunity_this_round = False
             p.triple_vote = False
+            p.is_silenced = False
+        room.curfew_active = False
         
         # Advance turn order
         room.active_turn_index = (room.round - 1) % len(room.turn_order)
@@ -901,6 +925,13 @@ async def ws_handler(websocket):
                     # Exiled players do NOT vote
                     continue
 
+                if getattr(voter, "is_silenced", False):
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "message": "Вы лишены права голоса в этом раунде картой «Обет молчания»!"
+                    }, ensure_ascii=False))
+                    continue
+
                 target_id = data.get("target_id")
                 target_player = room.players.get(target_id)
                 if not target_player or target_player.is_exiled:
@@ -1026,6 +1057,88 @@ async def ws_handler(websocket):
                 elif spc_id == "spc_baba_yaga":
                     player.retaliation_active = True
                     room.add_log(f"🐶 {player.name} активировал Возмездие «Не трогай мою собаку»! Если его изгонят, он заберёт своего обидчика с собой!")
+
+                # 9. Bunker Expansion (+1 slot)
+                elif spc_id == "spc_bunker_expansion":
+                    room.bunker_capacity_bonus = getattr(room, "bunker_capacity_bonus", 0) + 1
+                    room.add_log(f"🏗️ {player.name} обнаружил Скрытый жилой модуль! Вместимость Бункера навсегда увеличена: теперь спасутся {room.get_bunker_capacity()} выживших!")
+
+                # 10. Silence (prevent player from voting)
+                elif spc_id == "spc_silence":
+                    if target_player:
+                        target_player.is_silenced = True
+                        room.add_log(f"🔇 {player.name} наложил Обет молчания на {target_player.name}! Тот лишён права голоса в этом раунде.")
+                    else:
+                        room.add_log(f"🔇 {player.name} применил Обет молчания, но цель не найдена.")
+
+                # 11. Steal/Swap Profession
+                elif spc_id == "spc_steal_profession":
+                    if target_player:
+                        my_prof = player.hand["profession"]
+                        their_prof = target_player.hand["profession"]
+                        my_prof["revealed"] = True
+                        their_prof["revealed"] = True
+                        player.hand["profession"] = their_prof
+                        target_player.hand["profession"] = my_prof
+                        room.add_log(f"🎭 {player.name} совершил Смену масок с {target_player.name}! {player.name} теперь «{their_prof['name']}», а {target_player.name} стал «{my_prof['name']}»!")
+                    else:
+                        room.add_log(f"🎭 {player.name} применил Смену масок, но соперник не найден.")
+
+                # 12. Swap Health
+                elif spc_id == "spc_swap_health":
+                    if target_player:
+                        my_hlth = player.hand["health"]
+                        their_hlth = target_player.hand["health"]
+                        my_hlth["revealed"] = True
+                        their_hlth["revealed"] = True
+                        player.hand["health"] = their_hlth
+                        target_player.hand["health"] = my_hlth
+                        room.add_log(f"💉 {player.name} обменялся анализами здоровья с {target_player.name}! {player.name} получил «{their_hlth['name']}», а {target_player.name} получил «{my_hlth['name']}»!")
+                    else:
+                        room.add_log(f"💉 {player.name} попытался обменяться анализами, но цель не найдена.")
+
+                # 13. Curfew (cancel exile in current round)
+                elif spc_id == "spc_curfew":
+                    room.curfew_active = True
+                    room.add_log(f"🚨 {player.name} объявил Комендантский час! Изгнание в этом раунде отменено — все остаются в убежище!")
+
+                # 14. Rejuvenation (perfect biology)
+                elif spc_id == "spc_rejuvenation":
+                    player.hand["biology"] = {
+                        "name": "25 лет, абсолютная фертильность (Генная терапия)",
+                        "badge": "Фертилен / Молод",
+                        "desc": "Возраст 25 лет. Превосходный генетический код и репродуктивный потенциал для продолжения рода.",
+                        "category": "biology",
+                        "revealed": True
+                    }
+                    room.add_log(f"🧬 {player.name} прошёл Генную терапию: Биология изменена на «25 лет, абсолютная фертильность»!")
+
+                # 15. Extra Bunker Room
+                elif spc_id == "spc_extra_bunker_room":
+                    used_room_names = {pair["bunker"]["name"] for pair in room.bunker_threat_pairs if "bunker" in pair}
+                    avail_rooms = [b for b in CARDS_DB["bunker"] if b["name"] not in used_room_names]
+                    new_room = random.choice(avail_rooms if avail_rooms else CARDS_DB["bunker"])
+                    room.bunker_threat_pairs.append({
+                        "round": "+",
+                        "revealed": True,
+                        "bunker": new_room,
+                        "threat": {
+                            "name": "Защищённый гермосектор",
+                            "desc": "Секретный бункерный отсек полностью изолирован и не несёт дополнительных угроз."
+                        }
+                    })
+                    room.add_log(f"🔑 {player.name} открыл Спецхранилище! В Бункере открыт дополнительный отсек: «{new_room['name']}» {new_room.get('icon', '')}!")
+
+                # 16. Airdrop Supplies (Luggage enhancement)
+                elif spc_id == "spc_airdrop_luggage":
+                    used_lug_names = {p.hand["luggage"]["name"] for p in room.players.values()}
+                    avail_lugs = [l for l in CARDS_DB["luggage"] if l["name"] not in used_lug_names]
+                    bonus_lug = random.choice(avail_lugs if avail_lugs else CARDS_DB["luggage"])
+                    curr_lug = player.hand["luggage"]
+                    curr_lug["name"] = f"{curr_lug['name']} + {bonus_lug['name']}"
+                    curr_lug["desc"] = f"{curr_lug['desc']} Дополнительно: {bonus_lug['desc']}"
+                    curr_lug["revealed"] = True
+                    room.add_log(f"📦 {player.name} перехватил Авиасброс припасов! К багажу добавлен: «{bonus_lug['name']}» {bonus_lug.get('icon', '')}!")
 
                 await broadcast_room(room)
 
