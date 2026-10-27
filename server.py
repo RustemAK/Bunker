@@ -62,6 +62,8 @@ class Player:
         self.special_condition = None
         self.voted_for = None
         self.immunity_this_round = False
+        self.triple_vote = False
+        self.retaliation_active = False
 
 # Official Bunker 3.3 Exile Schedule per Player Count (N: {round: exiles})
 EXILE_SCHEDULE = {
@@ -209,6 +211,9 @@ class Room:
                 "is_host": (p.id == self.host_id),
                 "is_connected": p.is_connected,
                 "is_exiled": p.is_exiled,
+                "immunity_this_round": p.immunity_this_round,
+                "triple_vote": p.triple_vote,
+                "retaliation_active": p.retaliation_active,
                 "is_active_turn": (p.id == self.get_active_player_id() and self.status == "in_game" and self.phase == "turns"),
                 "has_voted": (p.voted_for is not None),
                 "hand": sanitized_hand,
@@ -329,6 +334,8 @@ def init_game(room):
         p.is_exiled = False
         p.voted_for = None
         p.immunity_this_round = False
+        p.triple_vote = False
+        p.retaliation_active = False
         p.hand = {
             "profession": {**prof_deck[i], "category": "profession", "revealed": False},
             "biology": {**bio_deck[i], "category": "biology", "revealed": False},
@@ -392,10 +399,16 @@ def resolve_voting(room):
         if not p.is_exiled and p.voted_for:
             target = p.voted_for
             if target in room.players and not room.players[target].is_exiled:
-                vote_counts[target] = vote_counts.get(target, 0) + 1
+                # If target has diplomatic immunity, votes against them are ignored
+                if getattr(room.players[target], "immunity_this_round", False):
+                    continue
+                # Weight from Say My Name ultimatum
+                weight = 3 if getattr(p, "triple_vote", False) else 1
+                vote_counts[target] = vote_counts.get(target, 0) + weight
                 if target not in voter_map:
                     voter_map[target] = []
-                voter_map[target].append(p.name)
+                voter_label = f"{p.name} (x3 Ультиматум)" if weight == 3 else p.name
+                voter_map[target].append(voter_label)
 
     room.votes = {
         room.players[tid].name: {
@@ -406,7 +419,7 @@ def resolve_voting(room):
 
     if not vote_counts:
         room.stop_timer()
-        room.add_log("⚖️ Голоса не были поданы. Никто не изгнан в этом раунде.")
+        room.add_log("⚖️ Голоса не были поданы (или цели имели дипломатический иммунитет). Никто не изгнан в этом раунде.")
         advance_round(room)
         return
 
@@ -419,6 +432,8 @@ def resolve_voting(room):
     to_exile_ids = sorted_candidates[:min(num_exiles, len(sorted_candidates))]
 
     exiled_names = []
+    baba_yaga_retaliations = []
+
     for exiled_id in to_exile_ids:
         exiled_player = room.players[exiled_id]
         exiled_player.is_exiled = True
@@ -427,10 +442,29 @@ def resolve_voting(room):
         for cat, c in exiled_player.hand.items():
             c["revealed"] = True
 
+        # Check Baba Yaga retaliation («Не трогай мою собаку»)
+        if getattr(exiled_player, "retaliation_active", False):
+            voters_against = [
+                v_pid for v_pid, vp in room.players.items()
+                if not vp.is_exiled and vp.voted_for == exiled_id and v_pid != exiled_id
+            ]
+            if voters_against:
+                victim_id = random.choice(voters_against)
+                victim = room.players[victim_id]
+                victim.is_exiled = True
+                for cat, c in victim.hand.items():
+                    c["revealed"] = True
+                exiled_names.append(f"{victim.name} (Возмездие 💥)")
+                baba_yaga_retaliations.append(
+                    f"💥 ВОЗМЕЗДИЕ: {exiled_player.name} забрал с собой в изгнание игрока {victim.name} («Не трогай мою собаку»)!"
+                )
+
     room.last_exiled = ", ".join(exiled_names)
     room.stop_timer()
     room.phase = "vote_results"
     room.add_log(f"❌ ИЗГНАНИЕ: {room.last_exiled} покидает(ют) Бункер по итогам голосования!")
+    for ret_msg in baba_yaga_retaliations:
+        room.add_log(ret_msg)
     room.add_log(f"📢 Все карты {room.last_exiled} вскрыты. Изгнанные участники больше не участвуют в голосовании.")
 
 def advance_round(room):
@@ -455,10 +489,11 @@ def advance_round(room):
             t_name = room.bunker_threat_pairs[room.round - 1]["threat"]["name"]
             room.add_log(f"📦 Раунд {room.round}: Вскрыты отсек «{b_name}» и Угроза «{t_name}»!")
 
-        # Reset votes and turn index
+        # Reset votes and round-specific buffs
         for p in room.players.values():
             p.voted_for = None
             p.immunity_this_round = False
+            p.triple_vote = False
         
         # Advance turn order
         room.active_turn_index = (room.round - 1) % len(room.turn_order)
@@ -872,6 +907,13 @@ async def ws_handler(websocket):
                     # Cannot vote for an exiled player
                     continue
 
+                if target_player.immunity_this_round:
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "message": f"У игрока {target_player.name} дипломатический иммунитет в этом раунде! Против него голосовать нельзя."
+                    }, ensure_ascii=False))
+                    continue
+
                 voter.voted_for = target_id
                 room.add_log(f"📝 {voter.name} заполнил тайный бюллетень.")
 
@@ -910,19 +952,80 @@ async def ws_handler(websocket):
                     continue
 
                 spc = player.special_condition
+                spc_id = spc.get("id")
                 spc["played"] = True
                 room.add_log(f"⚡ {player.name} разыграл Особое Условие: «{spc['name']}»!")
 
-                # In-game effect handlers
-                if spc["id"] == "spc_diplomatic_immunity":
+                target_id = data.get("target_id")
+                other_players = [p for p in room.players.values() if p.id != player.id and not p.is_exiled]
+                target_player = room.players.get(target_id) if target_id in room.players else (other_players[0] if other_players else None)
+
+                # 1. Diplomatic Immunity
+                if spc_id == "spc_diplomatic_immunity":
                     player.immunity_this_round = True
-                    room.add_log(f"🛡️ {player.name} получил дипломатический иммунитет на этот раунд!")
-                elif spc["id"] == "spc_its_not_lupus":
+                    room.add_log(f"🛡️ {player.name} получил дипломатический иммунитет на этот раунд! Против него запрещено голосовать.")
+
+                # 2. It's Not Lupus (heal health)
+                elif spc_id == "spc_its_not_lupus":
                     player.hand["health"]["name"] = "Идеально здоров (Вылечен)"
                     player.hand["health"]["badge"] = "Здоров"
-                    player.hand["health"]["desc"] = "Полностью здоров благодаря своевременному диагнозу."
+                    player.hand["health"]["desc"] = "Полностью здоров благодаря своевременному диагнозу. Никаких патологий."
                     player.hand["health"]["revealed"] = True
-                    room.add_log(f"🩺 Карта Здоровья игрока {player.name} заменена на «Идеально здоров»!")
+                    room.add_log(f"🩺 Карта Здоровья игрока {player.name} исцелена до «Идеально здоров» и вскрыта!")
+
+                # 3. Reroll Profession
+                elif spc_id == "spc_reroll_profession":
+                    used_prof_ids = {p.hand["profession"]["id"] for p in room.players.values()}
+                    available = [prof for prof in CARDS_DB["professions"] if prof["id"] not in used_prof_ids]
+                    new_prof = random.choice(available if available else CARDS_DB["professions"])
+                    player.hand["profession"] = {**new_prof, "category": "profession", "revealed": True}
+                    room.add_log(f"🎓 {player.name} получил Второе высшее образование: новая профессия — «{new_prof['name']}» {new_prof.get('icon', '')}!")
+
+                # 4. Threat Level Midnight (replace threat)
+                elif spc_id == "spc_threat_level":
+                    curr_idx = min(max(0, room.round - 1), len(room.bunker_threat_pairs) - 1)
+                    old_name = room.bunker_threat_pairs[curr_idx]["threat"]["name"]
+                    avail_threats = [t for t in CARDS_DB["threats"] if t["name"] != old_name]
+                    new_threat = random.choice(avail_threats if avail_threats else CARDS_DB["threats"])
+                    room.bunker_threat_pairs[curr_idx]["threat"] = new_threat
+                    room.bunker_threat_pairs[curr_idx]["revealed"] = True
+                    room.add_log(f"📦 {player.name} объявил «Threat Level Midnight»! Угроза «{old_name}» отменена, новая Угроза Раунда {room.round}: «{new_threat['name']}» {new_threat.get('icon', '')}!")
+
+                # 5. Say My Name (triple vote weight)
+                elif spc_id == "spc_say_my_name":
+                    player.triple_vote = True
+                    room.add_log(f"🧪 {player.name} объявил ультиматум «Say My Name»! Его голос на голосовании этого раунда утраивается (х3)!")
+
+                # 6. Swap Luggage
+                elif spc_id == "spc_swap_luggage":
+                    if target_player:
+                        my_lug = player.hand["luggage"]
+                        their_lug = target_player.hand["luggage"]
+                        my_lug["revealed"] = True
+                        their_lug["revealed"] = True
+                        player.hand["luggage"] = their_lug
+                        target_player.hand["luggage"] = my_lug
+                        room.add_log(f"🧳 {player.name} конфисковал Багаж «{their_lug['name']}» у {target_player.name}, отдав взамен свой «{my_lug['name']}»!")
+                    else:
+                        room.add_log(f"🧳 {player.name} применил конфискацию багажа, но других целей не оказалось.")
+
+                # 7. Lie Detector (force reveal a card)
+                elif spc_id == "spc_lie_detector":
+                    if target_player:
+                        unrevealed = [c for c in target_player.hand.values() if not c.get("revealed", False)]
+                        if unrevealed:
+                            forced = random.choice(unrevealed)
+                            forced["revealed"] = True
+                            room.add_log(f"🔍 {player.name} применил Сыворотку правды к {target_player.name}: принудительно вскрыта карта {forced.get('badge','')} «{forced['name']}»!")
+                        else:
+                            room.add_log(f"🔍 {player.name} применил Сыворотку правды к {target_player.name}, но у того уже все карты открыты.")
+                    else:
+                        room.add_log(f"🔍 {player.name} разыграл Сыворотку правды, но цель не найдена.")
+
+                # 8. Baba Yaga (retaliation if exiled)
+                elif spc_id == "spc_baba_yaga":
+                    player.retaliation_active = True
+                    room.add_log(f"🐶 {player.name} активировал Возмездие «Не трогай мою собаку»! Если его изгонят, он заберёт своего обидчика с собой!")
 
                 await broadcast_room(room)
 

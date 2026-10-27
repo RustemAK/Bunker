@@ -341,7 +341,7 @@
       </div>
 
       <p class="rule-reminder">
-        ℹ️ <em>Правило Редакции 3.3:</em> Изгнанный вскрывает все свои оставшиеся карты, но <strong>не покидает игру</strong> — он продолжает полноценно голосовать в следующих раундах!
+        ℹ️ <em>Правило бункера:</em> Изгнанный игрок вскрывает все свои оставшиеся карты Досье и выбывает из последующих голосований!
       </p>
 
       <div id="hostNextRoundBtnBox" class="modal-footer hidden">
@@ -448,6 +448,29 @@
     </div>
   </div>
 
+  <!-- MODAL 5: SPECIAL CARD TARGET SELECTION -->
+  <div id="specialTargetModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 440px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge">⚡ РОЗЫГРЫШ ОСОБОГО УСЛОВИЯ</div>
+          <h2 id="specialModalTitle">Выберите цель</h2>
+        </div>
+        <button id="closeSpecialModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+      <p id="specialModalPrompt" class="hint-text" style="margin-bottom: 16px;">
+        Выберите игрока, против которого направлен ваш козырь:
+      </p>
+      <div id="specialTargetsList" class="candidates-grid" style="margin-bottom: 18px;">
+        <!-- Dynamically rendered other alive players -->
+      </div>
+      <div class="modal-footer">
+        <button id="confirmSpecialTargetBtn" class="btn btn-primary btn-block" disabled>
+          ⚡ ПРИМЕНИТЬ КОЗЫРЬ
+        </button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

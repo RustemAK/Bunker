@@ -1347,6 +1347,17 @@ input[type="text"]:focus {
   background: rgba(239, 68, 68, 0.1);
 }
 
+.candidate-item.disabled-immune {
+  opacity: 0.55;
+  cursor: not-allowed !important;
+  border-color: rgba(245, 158, 11, 0.4) !important;
+}
+
+.candidate-item.disabled-immune:hover {
+  border-color: rgba(245, 158, 11, 0.4) !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+}
+
 .candidate-item.selected {
   border-color: var(--color-danger);
   background: rgba(239, 68, 68, 0.2);

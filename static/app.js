@@ -118,6 +118,15 @@
   const mySpecialTiming = document.getElementById('mySpecialTiming');
   const playSpecialBtn = document.getElementById('playSpecialBtn');
 
+  // Special Card Target Modal
+  const specialTargetModal = document.getElementById('specialTargetModal');
+  const specialModalTitle = document.getElementById('specialModalTitle');
+  const specialModalPrompt = document.getElementById('specialModalPrompt');
+  const specialTargetsList = document.getElementById('specialTargetsList');
+  const confirmSpecialTargetBtn = document.getElementById('confirmSpecialTargetBtn');
+  const closeSpecialModalBtn = document.getElementById('closeSpecialModalBtn');
+  let selectedSpecialTargetId = null;
+
   // Bunker Tab
   const catFullIcon = document.getElementById('catFullIcon');
   const catFullBadge = document.getElementById('catFullBadge');
@@ -541,6 +550,15 @@
       } else if (p.is_active_turn) {
         statusHtml = '<span class="tile-status turn">🎤 ВЫСТУПАЕТ СЕЙЧАС</span>';
       }
+      if (p.immunity_this_round) {
+        statusHtml += ' <span class="tile-status" style="background: rgba(245, 158, 11, 0.2); border-color: var(--color-amber); color: var(--color-amber);">🛡️ Иммунитет</span>';
+      }
+      if (p.triple_vote) {
+        statusHtml += ' <span class="tile-status" style="background: rgba(16, 185, 129, 0.2); border-color: var(--color-emerald); color: var(--color-emerald);">🧪 Голос x3</span>';
+      }
+      if (p.retaliation_active) {
+        statusHtml += ' <span class="tile-status" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-danger); color: var(--color-danger);">🐶 Возмездие</span>';
+      }
 
       // Revealed pills
       let pillsHtml = '';
@@ -718,12 +736,83 @@
   }
 
   playSpecialBtn.addEventListener('click', () => {
-    if (confirm('Вы уверены, что хотите разыграть своё Особое Условие прямо сейчас?')) {
-      initAudio();
-      soundAlarm();
-      ws.send(jsonStr({ action: 'play_special' }));
+    const me = gameState.players.find(p => p.id === gameState.my_id);
+    if (!me || !me.special_condition || me.special_condition.played) return;
+
+    const spc = me.special_condition;
+    const needsTarget = (spc.id === 'spc_swap_luggage' || spc.id === 'spc_lie_detector');
+    const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
+
+    if (needsTarget) {
+      if (aliveOpponents.length === 0) {
+        showToast('⚠️ Нет доступных соперников для применения этой карты!');
+        return;
+      }
+      if (aliveOpponents.length === 1) {
+        if (confirm(`Разыграть козырь «${spc.name}» против игрока ${aliveOpponents[0].name}?`)) {
+          initAudio();
+          soundAlarm();
+          ws.send(jsonStr({ action: 'play_special', target_id: aliveOpponents[0].id }));
+        }
+        return;
+      }
+
+      // Open target modal
+      specialModalTitle.textContent = spc.name;
+      specialModalPrompt.textContent = spc.desc;
+      specialTargetsList.innerHTML = '';
+      selectedSpecialTargetId = null;
+      confirmSpecialTargetBtn.disabled = true;
+
+      aliveOpponents.forEach(opp => {
+        const item = document.createElement('div');
+        item.className = 'candidate-item';
+        item.innerHTML = `
+          <span style="font-size: 1.8rem;">${opp.avatar}</span>
+          <div>
+            <strong style="color: #fff;">${escapeHtml(opp.name)}</strong>
+            <div style="font-size: 0.8rem; color: var(--color-amber);">
+              ${opp.hand.profession && opp.hand.profession.revealed ? opp.hand.profession.name : 'Выживший'}
+            </div>
+          </div>
+        `;
+        item.addEventListener('click', () => {
+          initAudio();
+          soundClick();
+          specialTargetsList.querySelectorAll('.candidate-item').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+          selectedSpecialTargetId = opp.id;
+          confirmSpecialTargetBtn.disabled = false;
+        });
+        specialTargetsList.appendChild(item);
+      });
+
+      specialTargetModal.classList.remove('hidden');
+    } else {
+      // Direct activation
+      if (confirm(`Вы уверены, что хотите разыграть «${spc.name}» прямо сейчас?\n\nДействие: ${spc.desc}`)) {
+        initAudio();
+        soundAlarm();
+        ws.send(jsonStr({ action: 'play_special' }));
+      }
     }
   });
+
+  if (confirmSpecialTargetBtn) {
+    confirmSpecialTargetBtn.addEventListener('click', () => {
+      if (!selectedSpecialTargetId) return;
+      initAudio();
+      soundAlarm();
+      ws.send(jsonStr({ action: 'play_special', target_id: selectedSpecialTargetId }));
+      specialTargetModal.classList.add('hidden');
+    });
+  }
+
+  if (closeSpecialModalBtn) {
+    closeSpecialModalBtn.addEventListener('click', () => {
+      specialTargetModal.classList.add('hidden');
+    });
+  }
 
   // --- TAB 3: BUNKER AND THREATS ---
   function renderBunkerTab() {
@@ -799,26 +888,33 @@
     const candidates = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
 
     candidates.forEach(cand => {
+      const isImmune = !!cand.immunity_this_round;
       const item = document.createElement('div');
-      item.className = 'candidate-item';
+      item.className = 'candidate-item' + (isImmune ? ' disabled-immune' : '');
       item.innerHTML = `
         <span style="font-size: 1.8rem;">${cand.avatar}</span>
         <div>
           <strong style="color: #fff;">${escapeHtml(cand.name)}</strong>
+          ${isImmune ? '<span class="hazard-badge" style="background: rgba(245, 158, 11, 0.2); border-color: var(--color-amber); color: var(--color-amber); margin-left: 6px;">🛡️ ИММУНИТЕТ</span>' : ''}
           <div style="font-size: 0.8rem; color: var(--color-amber);">
             ${cand.hand.profession && cand.hand.profession.revealed ? cand.hand.profession.name : 'Профессия скрыта'}
           </div>
         </div>
       `;
 
-      item.addEventListener('click', () => {
-        initAudio();
-        soundClick();
-        candidatesList.querySelectorAll('.candidate-item').forEach(el => el.classList.remove('selected'));
-        item.classList.add('selected');
-        selectedVoteCandidateId = cand.id;
-        submitVoteBtn.disabled = false;
-      });
+      if (!isImmune) {
+        item.addEventListener('click', () => {
+          initAudio();
+          soundClick();
+          candidatesList.querySelectorAll('.candidate-item').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+          selectedVoteCandidateId = cand.id;
+          submitVoteBtn.disabled = false;
+        });
+      } else {
+        item.style.opacity = '0.5';
+        item.style.cursor = 'not-allowed';
+      }
 
       candidatesList.appendChild(item);
     });
