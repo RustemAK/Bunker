@@ -1321,3 +1321,223 @@ input[type="text"]:focus {
   from { transform: translateX(100%); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
+
+/* ================= AI OVERSEER FINALE STYLES ================= */
+.finale-card {
+  max-width: 680px;
+  border-color: rgba(6, 182, 212, 0.4);
+  box-shadow: 0 0 50px rgba(6, 182, 212, 0.15);
+}
+
+.ai-launch-box {
+  padding: 20px 0;
+  text-align: center;
+}
+
+.glow-pulse {
+  animation: glowPulseBtn 1.8s infinite;
+}
+
+@keyframes glowPulseBtn {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(245, 158, 11, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(245, 158, 11, 0.8);
+    transform: scale(1.02);
+  }
+}
+
+.ai-key-hint {
+  margin-top: 10px;
+  color: var(--text-dim);
+}
+
+.ai-loading-box {
+  text-align: center;
+  padding: 30px 10px;
+}
+
+.scanner-circle {
+  width: 70px;
+  height: 70px;
+  margin: 0 auto 16px;
+  border-radius: 50%;
+  border: 2px dashed var(--color-cyan);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  animation: rotateRadar 3s linear infinite;
+}
+
+@keyframes rotateRadar {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.terminal-logs-ai {
+  margin-top: 18px;
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-cyan);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.log-line {
+  animation: pulseOpacity 1.5s infinite;
+}
+
+.ai-results-box {
+  animation: fadeIn 0.4s ease;
+}
+
+.ai-score-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  margin-bottom: 20px;
+}
+
+.score-circle {
+  width: 95px;
+  height: 95px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(0, 0, 0, 0.5) 70%);
+  border: 3px solid var(--color-emerald);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.3);
+}
+
+.score-number {
+  font-family: var(--font-mono);
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.score-circle small {
+  font-size: 0.6rem;
+  font-family: var(--font-mono);
+  color: var(--color-emerald-light);
+  letter-spacing: 1px;
+}
+
+.score-meta {
+  flex: 1;
+}
+
+.score-meta h3 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  color: #fff;
+  margin: 4px 0 6px;
+}
+
+.ai-verdict {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.ai-timeline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .ai-timeline-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.timeline-quarter-card {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--color-amber);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+}
+
+.timeline-period {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--color-amber);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.timeline-event {
+  font-size: 0.82rem;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.ai-mvp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .ai-mvp-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.mvp-box, .trouble-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+}
+
+.mvp-box { border-left: 3px solid var(--color-emerald); }
+.trouble-box { border-left: 3px solid var(--color-danger); }
+
+.mvp-tag {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 1px;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.mvp-box h4, .trouble-box h4 {
+  font-size: 1.05rem;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.ai-epilogue-card {
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.epilogue-text {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-main);
+  font-style: italic;
+}
+

@@ -309,33 +309,102 @@
     </div>
   </div>
 
-  <!-- MODAL 4: SURVIVAL FINALE -->
+  <!-- MODAL 4: SURVIVAL FINALE (AI OVERSEER) -->
   <div id="finaleModal" class="modal-overlay hidden">
     <div class="modal-card glass-panel finale-card">
-      <div class="hazard-badge">🏁 ФИНАЛЬНОЕ ИСПЫТАНИЕ</div>
-      <h2>ИСТОРИЯ ВЫЖИВАНИЯ (ФИНАЛ)</h2>
-      <p>5 раундов позади. Защитные двери бункера запечатаны ровно на 1 год.</p>
-
-      <div class="finale-stages">
-        <div class="finale-stage-box">
-          <h4>Этап 1: Главная Угроза убежища</h4>
-          <p id="finaleThreatName">Проверка на прочность...</p>
-        </div>
-        <div class="finale-stage-box">
-          <h4>Этап 2: Преодоление Катастрофы</h4>
-          <p id="finaleCatName">Проверка ресурсов группы...</p>
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge">🧠 БОРТОВОЙ ИИ УБЕЖИЩА: ОЦЕНКА ВЫЖИВАНИЯ</div>
+          <h2>ИСТОРИЯ ВЫЖИВАНИЯ: 365 ДНЕЙ СПУСТЯ</h2>
         </div>
       </div>
 
-      <p class="hint-text">
-        Выжившие вскрыли свои последние секретные 6-е карты! Совместными усилиями всех профессий, багажа и отсеков оцените шанс человечества на спасение.
-      </p>
+      <!-- 1. AI LAUNCH PROMPT (BEFORE ANALYSIS) -->
+      <div id="aiLaunchPrompt" class="ai-launch-box">
+        <p class="hint-text">
+          Гермозатворы запечатаны на 1 год. Все 6-е секретные карты выживших вскрыты!  
+          Бортовой суперкомпьютер готов рассчитать точный процент выживания и смоделировать судьбу колонии.
+        </p>
 
-      <button id="newGameHostBtn" class="btn btn-primary btn-block hidden">
-        🔄 НАЧАТЬ НОВУЮ ПАРТИЮ
-      </button>
+        <div id="aiHostActionRow">
+          <button id="triggerAiBtn" class="btn btn-primary btn-lg btn-block glow-pulse">
+            🧠 ЗАПУСТИТЬ ИИ-АНАЛИЗ ВЫЖИВАНИЯ
+          </button>
+          <div class="ai-key-hint">
+            <small>💡 Использует Gemini AI или встроенный алгоритмический симулятор убежища.</small>
+          </div>
+        </div>
+        <div id="aiWaitNotice" class="wait-notice text-amber hidden">
+          ⏳ Ожидаем, пока командир бункера запустит расчёт нейросети...
+        </div>
+      </div>
+
+      <!-- 2. AI LOADING SCANNER -->
+      <div id="aiLoadingScanner" class="ai-loading-box hidden">
+        <div class="scanner-circle">
+          <span class="scanner-icon">📡</span>
+        </div>
+        <h3 class="text-amber">НЕЙРОСЕТЬ МОДЕЛИРУЕТ 365 ДНЕЙ ИЗОЛЯЦИИ...</h3>
+        <div class="terminal-logs-ai">
+          <div class="log-line">> Сканирование профессий, багажа и биологического статуса...</div>
+          <div class="log-line">> Оценка генетического разнообразия и фертильности...</div>
+          <div class="log-line">> Симуляция преодоления главной Угрозы Бункера...</div>
+          <div class="log-line">> Формирование хроники колонии через Gemini AI...</div>
+        </div>
+      </div>
+
+      <!-- 3. AI RESULTS DISPLAY -->
+      <div id="aiResultsDisplay" class="ai-results-box hidden">
+        
+        <!-- Score & Status Header -->
+        <div class="ai-score-card">
+          <div class="score-circle" id="aiScoreGauge">
+            <span id="aiScorePercent" class="score-number">--%</span>
+            <small>ВЫЖИВАЕМОСТЬ</small>
+          </div>
+          <div class="score-meta">
+            <span id="aiStatusPill" class="status-pill alive">ПОЛНЫЙ УСПЕХ</span>
+            <h3 id="aiTitleHeader">Операция «Возрождение»</h3>
+            <p id="aiVerdictParagraph" class="ai-verdict">Вердикт суперкомпьютера...</p>
+          </div>
+        </div>
+
+        <!-- 12-Month Timeline -->
+        <div class="section-title">ХРОНИКА 12 МЕСЯЦЕВ В БУНКЕРЕ:</div>
+        <div id="aiTimelineGrid" class="ai-timeline-grid">
+          <!-- 4 chronological quarters -->
+        </div>
+
+        <!-- MVP & Troublemaker -->
+        <div class="ai-mvp-row">
+          <div class="mvp-box">
+            <span class="mvp-tag text-emerald">🏆 СПАСИТЕЛЬ КОЛОНИИ (MVP)</span>
+            <h4 id="aiMvpName">Имя</h4>
+            <p id="aiMvpReason" class="hint-text">Причина...</p>
+          </div>
+          <div class="trouble-box">
+            <span class="mvp-tag text-danger">⚠️ ГЛАВНАЯ ОБУЗА / РИСК</span>
+            <h4 id="aiTroubleName">Имя</h4>
+            <p id="aiTroubleReason" class="hint-text">Причина...</p>
+          </div>
+        </div>
+
+        <!-- Epilogue -->
+        <div class="ai-epilogue-card glass-panel">
+          <div class="special-badge">🌅 ЭПИЛОГ: ВЫХОД НА ПОВЕРХНОСТЬ (ДЕНЬ 365)</div>
+          <p id="aiEpilogueText" class="epilogue-text">Художественный рассказ...</p>
+        </div>
+
+        <div class="modal-footer">
+          <button id="newGameHostBtn" class="btn btn-primary btn-block hidden">
+            🔄 НАЧАТЬ НОВУЮ ПАРТИЮ
+          </button>
+        </div>
+      </div>
+
     </div>
   </div>
+
 
   <script src="app.js"></script>
 </body>

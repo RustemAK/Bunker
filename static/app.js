@@ -138,9 +138,25 @@
   const confirmNextRoundBtn = document.getElementById('confirmNextRoundBtn');
 
   const finaleModal = document.getElementById('finaleModal');
-  const finaleThreatName = document.getElementById('finaleThreatName');
-  const finaleCatName = document.getElementById('finaleCatName');
+  const aiLaunchPrompt = document.getElementById('aiLaunchPrompt');
+  const triggerAiBtn = document.getElementById('triggerAiBtn');
+  const aiHostActionRow = document.getElementById('aiHostActionRow');
+  const aiWaitNotice = document.getElementById('aiWaitNotice');
+  const aiLoadingScanner = document.getElementById('aiLoadingScanner');
+  const aiResultsDisplay = document.getElementById('aiResultsDisplay');
+  const aiScoreGauge = document.getElementById('aiScoreGauge');
+  const aiScorePercent = document.getElementById('aiScorePercent');
+  const aiStatusPill = document.getElementById('aiStatusPill');
+  const aiTitleHeader = document.getElementById('aiTitleHeader');
+  const aiVerdictParagraph = document.getElementById('aiVerdictParagraph');
+  const aiTimelineGrid = document.getElementById('aiTimelineGrid');
+  const aiMvpName = document.getElementById('aiMvpName');
+  const aiMvpReason = document.getElementById('aiMvpReason');
+  const aiTroubleName = document.getElementById('aiTroubleName');
+  const aiTroubleReason = document.getElementById('aiTroubleReason');
+  const aiEpilogueText = document.getElementById('aiEpilogueText');
   const newGameHostBtn = document.getElementById('newGameHostBtn');
+
 
   const toastContainer = document.getElementById('toastContainer');
 
@@ -741,23 +757,95 @@
     ws.send(jsonStr({ action: 'next_round_confirm' }));
   });
 
-  // --- FINALE MODAL ---
+  // --- FINALE MODAL (AI OVERSEER) ---
   function renderFinaleModal() {
-    const revealedThreats = gameState.bunker_threat_pairs.filter(p => p.revealed).map(p => p.threat);
-    const chosenThreat = revealedThreats[0] || { name: 'Кризис систем жизнеобеспечения' };
-
-    finaleThreatName.textContent = chosenThreat.name + ' (' + (chosenThreat.needed || 'Требуется защита') + ')';
-    finaleCatName.textContent = gameState.catastrophe ? gameState.catastrophe.name : 'Глобальный катаклизм';
-
     const isHost = (gameState.host_id === gameState.my_id);
-    if (isHost) {
-      newGameHostBtn.classList.remove('hidden');
+
+    if (gameState.ai_loading) {
+      aiLaunchPrompt.classList.add('hidden');
+      aiLoadingScanner.classList.remove('hidden');
+      aiResultsDisplay.classList.add('hidden');
+    } else if (gameState.ai_analysis) {
+      aiLaunchPrompt.classList.add('hidden');
+      aiLoadingScanner.classList.add('hidden');
+      aiResultsDisplay.classList.remove('hidden');
+
+      const a = gameState.ai_analysis;
+      const pct = a.survival_percent || 50;
+      aiScorePercent.textContent = `${pct}%`;
+      aiTitleHeader.textContent = a.title || 'Итог экспедиции';
+      aiVerdictParagraph.textContent = a.verdict || '';
+
+      // Colorize gauge based on survival percentage
+      if (pct >= 70) {
+        aiScoreGauge.style.borderColor = 'var(--color-emerald)';
+        aiScoreGauge.style.boxShadow = '0 0 25px rgba(16, 185, 129, 0.4)';
+        aiStatusPill.className = 'status-pill alive';
+        aiStatusPill.textContent = a.status || 'ПОЛНЫЙ УСПЕХ';
+      } else if (pct >= 40) {
+        aiScoreGauge.style.borderColor = 'var(--color-amber)';
+        aiScoreGauge.style.boxShadow = '0 0 25px rgba(245, 158, 11, 0.4)';
+        aiStatusPill.className = 'status-pill locked';
+        aiStatusPill.textContent = a.status || 'ЧАСТИЧНЫЙ УСПЕХ';
+      } else {
+        aiScoreGauge.style.borderColor = 'var(--color-danger)';
+        aiScoreGauge.style.boxShadow = '0 0 25px rgba(239, 68, 68, 0.4)';
+        aiStatusPill.className = 'status-pill exiled';
+        aiStatusPill.textContent = a.status || 'КОЛОНИЯ ВЫМЕРЛА';
+      }
+
+      // Render timeline cards
+      aiTimelineGrid.innerHTML = '';
+      (a.timeline || []).forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'timeline-quarter-card';
+        card.innerHTML = `
+          <div class="timeline-period">${escapeHtml(item.period)}</div>
+          <div class="timeline-event">${escapeHtml(item.event)}</div>
+        `;
+        aiTimelineGrid.appendChild(card);
+      });
+
+      // MVP and Troublemaker
+      aiMvpName.textContent = a.mvp ? a.mvp.name : 'Не определён';
+      aiMvpReason.textContent = a.mvp ? a.mvp.reason : '';
+
+      aiTroubleName.textContent = a.troublemaker ? a.troublemaker.name : 'Не определён';
+      aiTroubleReason.textContent = a.troublemaker ? a.troublemaker.reason : '';
+
+      // Epilogue
+      aiEpilogueText.textContent = a.epilogue || '';
+
+      if (isHost) {
+        newGameHostBtn.classList.remove('hidden');
+      } else {
+        newGameHostBtn.classList.add('hidden');
+      }
+
     } else {
-      newGameHostBtn.classList.add('hidden');
+      // Launch state
+      aiLaunchPrompt.classList.remove('hidden');
+      aiLoadingScanner.classList.add('hidden');
+      aiResultsDisplay.classList.add('hidden');
+
+      if (isHost) {
+        aiHostActionRow.classList.remove('hidden');
+        aiWaitNotice.classList.add('hidden');
+      } else {
+        aiHostActionRow.classList.add('hidden');
+        aiWaitNotice.classList.remove('hidden');
+      }
     }
 
     finaleModal.classList.remove('hidden');
   }
+
+  triggerAiBtn.addEventListener('click', () => {
+    initAudio();
+    soundAlarm();
+    ws.send(jsonStr({ action: 'run_ai_analysis' }));
+  });
+
 
   newGameHostBtn.addEventListener('click', () => {
     initAudio();
