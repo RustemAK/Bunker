@@ -121,6 +121,7 @@ class Room:
         self.curfew_active = False
         self.tie_data = None
         self.is_tie_revote = False
+        self.speech_timer_duration = 35
 
     def get_bunker_capacity(self):
         base = max(1, len(self.players) // 2)
@@ -269,6 +270,7 @@ class Room:
             "active_player_id": self.get_active_player_id(),
             "timer_seconds": self.timer_seconds,
             "timer_paused": self.timer_paused,
+            "speech_timer_duration": getattr(self, "speech_timer_duration", 35),
             "players": players_data,
             "log": self.log[-15:],
             "last_exiled": self.last_exiled,
@@ -306,6 +308,16 @@ async def broadcast_room(room):
             except Exception:
                 player.is_connected = False
 
+def safe_sample(deck, k):
+    if not deck:
+        return []
+    if k <= len(deck):
+        return random.sample(deck, k=k)
+    repeats = (k // len(deck)) + 1
+    extended = deck * repeats
+    random.shuffle(extended)
+    return extended[:k]
+
 def init_game(room):
     room.status = "in_game"
     room.round = 1
@@ -322,8 +334,8 @@ def init_game(room):
     room.catastrophe = random.choice(CARDS_DB["catastrophes"])
 
     # Pick 5 Bunker cards and 5 Threats
-    bunker_deck = random.sample(CARDS_DB["bunker"], k=min(5, len(CARDS_DB["bunker"])))
-    threat_deck = random.sample(CARDS_DB["threats"], k=min(5, len(CARDS_DB["threats"])))
+    bunker_deck = safe_sample(CARDS_DB["bunker"], k=5)
+    threat_deck = safe_sample(CARDS_DB["threats"], k=5)
 
     room.bunker_threat_pairs = []
     for i in range(5):
@@ -340,13 +352,13 @@ def init_game(room):
     room.active_turn_index = 0
 
     n = len(p_keys)
-    prof_deck = random.sample(CARDS_DB["professions"], k=n)
-    bio_deck = random.sample(CARDS_DB["biology"], k=n)
-    hlth_deck = random.sample(CARDS_DB["health"], k=n)
-    hob_deck = random.sample(CARDS_DB["hobbies"], k=n)
-    lug_deck = random.sample(CARDS_DB["luggage"], k=n)
-    fct_deck = random.sample(CARDS_DB["facts"], k=n)
-    spc_deck = random.sample(CARDS_DB["special_conditions"], k=n)
+    prof_deck = safe_sample(CARDS_DB["professions"], k=n)
+    bio_deck = safe_sample(CARDS_DB["biology"], k=n)
+    hlth_deck = safe_sample(CARDS_DB["health"], k=n)
+    hob_deck = safe_sample(CARDS_DB["hobbies"], k=n)
+    lug_deck = safe_sample(CARDS_DB["luggage"], k=n)
+    fct_deck = safe_sample(CARDS_DB["facts"], k=n)
+    spc_deck = safe_sample(CARDS_DB["special_conditions"], k=n)
 
     for i, pid in enumerate(p_keys):
         p = room.players[pid]
@@ -371,7 +383,7 @@ def init_game(room):
     room.add_log(f"🛡️ Вместимость бункера: {bunker_capacity} из {len(p_keys)} выживших (половина участников).")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
     room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию! (В 1-м раунде изгнания нет)")
-    room.start_timer(45)
+    room.start_timer(getattr(room, "speech_timer_duration", 35))
 
 def next_player_turn(room):
     non_exiled = [pid for pid in room.turn_order if not room.players[pid].is_exiled]
@@ -408,7 +420,7 @@ def next_player_turn(room):
                 break
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"👉 Ход переходит к: {active_p.name}. Выберите карту для вскрытия!")
-        room.start_timer(45)
+        room.start_timer(getattr(room, "speech_timer_duration", 35))
 
 
 def resolve_voting(room):
@@ -575,7 +587,7 @@ def advance_round(room):
 
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
-        room.start_timer(45)
+        room.start_timer(getattr(room, "speech_timer_duration", 35))
 
 def procedural_ai_analysis(cat, survivors, exiled, revealed_bunkers, revealed_threats):
 
@@ -905,7 +917,7 @@ async def ws_handler(websocket):
                     continue
 
                 card["revealed"] = True
-                room.timer_seconds = 30  # 30-second speech timer
+                room.timer_seconds = getattr(room, "speech_timer_duration", 35)
                 room.add_log(f"👁️ {player.name} вскрыл {card.get('badge', category)}: «{card['name']}» {card.get('icon','')}")
 
                 # Automatically or manually progress turn
@@ -962,6 +974,36 @@ async def ws_handler(websocket):
                 room.add_log("👉 Командир принудительно передал ход следующему выжившему.")
                 next_player_turn(room)
                 await broadcast_room(room)
+
+            elif msg_type == "finish_speech":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if room.phase != "turns" or room.status != "in_game":
+                    continue
+                if current_player_id != room.get_active_player_id():
+                    continue
+                active_p = room.players.get(current_player_id)
+                p_name = active_p.name if active_p else "Игрок"
+                room.add_log(f"🎤 {p_name} досрочно завершил свою речь и передал ход.")
+                next_player_turn(room)
+                await broadcast_room(room)
+
+            elif msg_type == "set_timer_duration":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id:
+                    continue
+                dur = int(data.get("seconds", 35))
+                if dur in (20, 35, 50):
+                    room.speech_timer_duration = dur
+                    room.add_log(f"⏱️ Командир установил темп таймера: {dur} сек на речь.")
+                    await broadcast_room(room)
+
+            elif msg_type == "ping":
+                await websocket.send(json.dumps({"type": "pong"}))
+                continue
 
 
             elif msg_type == "cast_vote":
@@ -1246,6 +1288,152 @@ async def ws_handler(websocket):
                     curr_lug["desc"] = f"{curr_lug['desc']} Дополнительно: {bonus_lug['desc']}"
                     curr_lug["revealed"] = True
                     room.add_log(f"📦 {player.name} перехватил Авиасброс припасов! К багажу добавлен: «{bonus_lug['name']}» {bonus_lug.get('icon', '')}!")
+
+                # 17. Reroll Hobby
+                elif spc_id == "spc_reroll_hobby":
+                    used_hob_names = {p.hand["hobby"]["name"] for p in room.players.values()}
+                    avail = [h for h in CARDS_DB["hobbies"] if h["name"] not in used_hob_names]
+                    new_hob = random.choice(avail if avail else CARDS_DB["hobbies"])
+                    player.hand["hobby"] = {**new_hob, "category": "hobby", "revealed": True}
+                    room.add_log(f"🎯 {player.name} прошёл Курсы переподготовки: новое хобби — «{new_hob['name']}»!")
+
+                # 18. Reroll Fact
+                elif spc_id == "spc_reroll_fact":
+                    used_fct_names = {p.hand["fact"]["name"] for p in room.players.values()}
+                    avail = [f for f in CARDS_DB["facts"] if f["name"] not in used_fct_names]
+                    new_fct = random.choice(avail if avail else CARDS_DB["facts"])
+                    player.hand["fact"] = {**new_fct, "category": "fact", "revealed": True}
+                    room.add_log(f"🧘 {player.name} прошёл Психотерапию: факт биографии изменён на — «{new_fct['name']}»!")
+
+                # 19. Swap Hobby
+                elif spc_id == "spc_swap_hobby":
+                    if target_player:
+                        my_hob = player.hand["hobby"]
+                        their_hob = target_player.hand["hobby"]
+                        my_hob["revealed"] = True
+                        their_hob["revealed"] = True
+                        player.hand["hobby"] = their_hob
+                        target_player.hand["hobby"] = my_hob
+                        room.add_log(f"🎸 {player.name} обменялся картой Хобби с {target_player.name}! Получено: «{their_hob['name']}».")
+                    else:
+                        room.add_log(f"🎸 {player.name} применил обмен хобби, но соперник не найден.")
+
+                # 20. Swap Biology
+                elif spc_id == "spc_swap_biology":
+                    if target_player:
+                        my_bio = player.hand["biology"]
+                        their_bio = target_player.hand["biology"]
+                        my_bio["revealed"] = True
+                        their_bio["revealed"] = True
+                        player.hand["biology"] = their_bio
+                        target_player.hand["biology"] = my_bio
+                        room.add_log(f"🧬 {player.name} обменялся биологическими данными с {target_player.name}! {player.name} теперь «{their_bio['name']}».")
+                    else:
+                        room.add_log(f"🧬 {player.name} попытался обменяться биологией, но цель не найдена.")
+
+                # 21. Swap Fact
+                elif spc_id == "spc_swap_fact":
+                    if target_player:
+                        my_fct = player.hand["fact"]
+                        their_fct = target_player.hand["fact"]
+                        my_fct["revealed"] = True
+                        their_fct["revealed"] = True
+                        player.hand["fact"] = their_fct
+                        target_player.hand["fact"] = my_fct
+                        room.add_log(f"📂 {player.name} обменялся картами Фактов с {target_player.name}! Получен факт «{their_fct['name']}».")
+                    else:
+                        room.add_log(f"📂 {player.name} попытался обменяться досье, но цель не найдена.")
+
+                # 22. Fertilization
+                elif spc_id == "spc_fertilization":
+                    player.hand["biology"] = {
+                        "name": "Фертилен (Высокая вероятность двойни / ЭКО)",
+                        "badge": "Фертилен / Буст",
+                        "desc": "Стимуляция репродуктивной системы. Идеальный потенциал возрождения популяции.",
+                        "category": "biology",
+                        "revealed": True
+                    }
+                    room.add_log(f"🍼 {player.name} прошёл процедуру ЭКО: получен статус «Фертилен / Вероятность двойни»!")
+
+                # 23. Disarm Luggage
+                elif spc_id == "spc_disarm_luggage":
+                    if target_player:
+                        target_player.hand["luggage"] = {
+                            "name": "Пустые карманы (Конфисковано)",
+                            "badge": "Утиль",
+                            "desc": "Весь инвентарь изъят при досмотре на входе в шлюз.",
+                            "category": "luggage",
+                            "revealed": True
+                        }
+                        room.add_log(f"🛄 {player.name} провёл Таможенный досмотр: багаж игрока {target_player.name} конфискован в утиль!")
+                    else:
+                        room.add_log(f"🛄 {player.name} применил досмотр, но цель не найдена.")
+
+                # 24. Reveal Threats
+                elif spc_id == "spc_reveal_threats":
+                    for pair in room.bunker_threat_pairs:
+                        pair["revealed"] = True
+                    room.add_log(f"📡 {player.name} активировал Сканер бункера: абсолютно все угрозы и отсеки убежища открыты наперёд!")
+
+                # 25. Radiation Pill
+                elif spc_id == "spc_radiation_pill":
+                    player.hand["health"] = {
+                        "name": "Генетический иммунитет ко всем токсинам и радиации",
+                        "badge": "Абсолютный иммунитет",
+                        "desc": "Клетки неуязвимы для ионизирующего излучения, ядов и биологического заражения.",
+                        "category": "health",
+                        "revealed": True
+                    }
+                    room.add_log(f"🧪 {player.name} принял Антирадин: Здоровье улучшено до «Генетический иммунитет ко всем токсинам»!")
+
+                # 26. Bunker Reinforce
+                elif spc_id == "spc_bunker_reinforce":
+                    curr_idx = min(max(0, room.round - 1), len(room.bunker_threat_pairs) - 1)
+                    room.bunker_threat_pairs[curr_idx]["threat"] = {
+                        "name": "🛡️ Угроза нейтрализована (Бронепереборки)",
+                        "type": "resolved",
+                        "badge": "Безопасно",
+                        "desc": "Отсек защищён усиленными переборками. Никакой опасности для выживших.",
+                        "needed": "Угроза ликвидирована."
+                    }
+                    room.bunker_threat_pairs[curr_idx]["revealed"] = True
+                    room.add_log(f"🛡️ {player.name} укрепил переборки убежища: Угроза Раунда {room.round} полностью нейтрализована!")
+
+                # 27. Copy Profession
+                elif spc_id == "spc_copy_profession":
+                    if target_player:
+                        target_prof = target_player.hand["profession"]
+                        player.hand["profession"] = {
+                            **target_prof,
+                            "name": f"{target_prof['name']} (Второй специалист)",
+                            "category": "profession",
+                            "revealed": True
+                        }
+                        room.add_log(f"📋 {player.name} завершил Стажировку: скопировал профессию «{target_prof['name']}» у {target_player.name}!")
+                    else:
+                        room.add_log(f"📋 {player.name} попытался скопировать профессию, но цель не найдена.")
+
+                # 28. Extra Vote Token
+                elif spc_id == "spc_extra_vote_token":
+                    player.triple_vote = True
+                    room.add_log(f"🗳️ {player.name} получил Двойной бюллетень! Его голос в текущем раунде усилен!")
+
+                # 29. Veteran Ration
+                elif spc_id == "spc_veteran_ration":
+                    curr_lug = player.hand["luggage"]
+                    curr_lug["name"] = f"{curr_lug['name']} + Стратегический госрезерв"
+                    curr_lug["desc"] = f"{curr_lug['desc']} Дополнительно: 100 банок армейских консервов, фильтры и витамины."
+                    curr_lug["revealed"] = True
+                    room.add_log(f"🥫 {player.name} вскрыл Стратегический госрезерв: к багажу добавлен годовой запас консервов и фильтров!")
+
+                # 30. Peace Treaty
+                elif spc_id == "spc_peace_treaty":
+                    if target_player:
+                        player.immunity_this_round = True
+                        target_player.immunity_this_round = True
+                        room.add_log(f"🕊️ {player.name} заключил Пакт о ненападении с {target_player.name}! Оба игрока защищены от изгнания в этом раунде!")
+                    else:
+                        room.add_log(f"🕊️ {player.name} предложил пакт о ненападении, но союзник не выбран.")
 
                 await broadcast_room(room)
 

@@ -1742,3 +1742,150 @@ input[type="text"]:focus {
   animation: pulseAlert 1.5s infinite;
 }
 
+/* ================= RECONNECT BANNER ================= */
+.reconnect-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #dc2626;
+  color: #fff;
+  text-align: center;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 700;
+  z-index: 9999;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+  animation: pulseBanner 1s infinite alternate;
+}
+
+@keyframes pulseBanner {
+  from { opacity: 0.9; }
+  to { opacity: 1; background: #b91c1c; }
+}
+
+/* ================= TEMPO SELECTOR ================= */
+.tempo-control-box {
+  margin-bottom: 16px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  text-align: center;
+}
+
+.tempo-label {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--color-amber);
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.tempo-btn-group {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tempo-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-main);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tempo-btn:hover {
+  border-color: var(--color-amber);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.tempo-btn.active {
+  background: var(--color-amber);
+  color: #000;
+  font-weight: 700;
+  border-color: var(--color-amber);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+/* ================= ACTIVE SPEAKER BAR ================= */
+.active-speaker-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.25), rgba(239, 68, 68, 0.25));
+  border: 2px solid var(--color-amber);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  gap: 12px;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+  animation: speakerPulse 1.8s infinite ease-in-out;
+}
+
+@keyframes speakerPulse {
+  0%, 100% { border-color: var(--color-amber); }
+  50% { border-color: var(--color-amber-light); box-shadow: 0 0 30px rgba(245, 158, 11, 0.5); }
+}
+
+.speaker-status-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.speaker-pulse {
+  animation: blinkDot 1s infinite;
+}
+
+@keyframes blinkDot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+/* ================= SURVIVORS FILTER BAR ================= */
+.survivors-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.filter-pill {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.filter-pill:hover {
+  color: #fff;
+  border-color: var(--border-glow);
+}
+
+.filter-pill.active {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: var(--color-amber);
+  color: var(--color-amber-light);
+  font-weight: 700;
+}
+

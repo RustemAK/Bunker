@@ -111,6 +111,23 @@
   const hostPauseTimerBtn = document.getElementById('hostPauseTimerBtn');
   const hostNextTurnBtn = document.getElementById('hostNextTurnBtn');
 
+  // Auto-reconnect & Tempo & Speaker & Filters
+  const reconnectBanner = document.getElementById('reconnectBanner');
+  const tempoControlBox = document.getElementById('tempoControlBox');
+  const tempoBtnGroup = document.getElementById('tempoBtnGroup');
+  const activeSpeakerBar = document.getElementById('activeSpeakerBar');
+  const speakerTimerVal = document.getElementById('speakerTimerVal');
+  const finishSpeechBtn = document.getElementById('finishSpeechBtn');
+  const filterAllBtn = document.getElementById('filterAllBtn');
+  const filterAliveBtn = document.getElementById('filterAliveBtn');
+  const filterExiledBtn = document.getElementById('filterExiledBtn');
+  const filterAllCount = document.getElementById('filterAllCount');
+  const filterAliveCount = document.getElementById('filterAliveCount');
+  const filterExiledCount = document.getElementById('filterExiledCount');
+
+  let currentSurvivorFilter = 'all';
+  let pingInterval = null;
+
 
   // Special Card
   const mySpecialName = document.getElementById('mySpecialName');
@@ -202,15 +219,24 @@
     }, 4000);
   }
 
-  // --- WEBSOCKET CONNECTION ---
+  // --- WEBSOCKET CONNECTION & AUTO-RECONNECT ---
   function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-    ws = new WebSocket(wsUrl);
+    if (pingInterval) clearInterval(pingInterval);
+
+    try {
+      ws = new WebSocket(wsUrl);
+    } catch (e) {
+      if (reconnectBanner) reconnectBanner.classList.remove('hidden');
+      setTimeout(connectWebSocket, 2000);
+      return;
+    }
 
     ws.onopen = () => {
       console.log('WS connected');
+      if (reconnectBanner) reconnectBanner.classList.add('hidden');
       // Auto-reconnect to room if saved
       if (currentRoomCode && myId) {
         ws.send(jsonStr({
@@ -219,11 +245,19 @@
           saved_player_id: myId
         }));
       }
+
+      // Mobile heartbeat: send ping every 15s to keep WebSocket alive on iOS/Android
+      pingInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(jsonStr({ action: 'ping' }));
+        }
+      }, 15000);
     };
 
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
+        if (msg.type === 'pong') return;
         handleServerMessage(msg);
       } catch (e) {
         console.error('Error parsing WS message:', e);
@@ -232,7 +266,13 @@
 
     ws.onclose = () => {
       console.log('WS closed, reconnecting in 2s...');
+      if (reconnectBanner) reconnectBanner.classList.remove('hidden');
+      if (pingInterval) clearInterval(pingInterval);
       setTimeout(connectWebSocket, 2000);
+    };
+
+    ws.onerror = () => {
+      if (reconnectBanner) reconnectBanner.classList.remove('hidden');
     };
   }
 
@@ -318,6 +358,7 @@
       const sec = msg.seconds;
       if (speechTimerNum) speechTimerNum.textContent = sec;
       if (debateCountdownNum) debateCountdownNum.textContent = sec;
+      if (speakerTimerVal) speakerTimerVal.textContent = sec;
       if (hostTimerStatus) {
         hostTimerStatus.textContent = msg.paused ? '⏸️ Таймер на паузе' : `⏱️ Осталось: ${sec}с`;
         hostTimerStatus.className = msg.paused ? 'host-timer-status text-danger' : 'host-timer-status text-amber';
@@ -329,7 +370,7 @@
     }
 
     if (msg.type === 'room_joined') {
-
+      if (reconnectBanner) reconnectBanner.classList.add('hidden');
       myId = msg.my_id;
       currentRoomCode = msg.room_code;
       localStorage.setItem('bunker_player_id', myId);
@@ -340,6 +381,7 @@
     }
 
     if (msg.type === 'state_update') {
+      if (reconnectBanner) reconnectBanner.classList.add('hidden');
       const prevPhase = gameState ? gameState.phase : null;
       gameState = msg.state;
       renderApp();
@@ -407,6 +449,18 @@
     });
 
     const isHost = (gameState.host_id === gameState.my_id);
+    if (tempoControlBox) {
+      if (isHost) {
+        tempoControlBox.classList.remove('hidden');
+        const dur = gameState.speech_timer_duration || 35;
+        tempoControlBox.querySelectorAll('.tempo-btn').forEach(btn => {
+          btn.classList.toggle('active', parseInt(btn.dataset.sec) === dur);
+        });
+      } else {
+        tempoControlBox.classList.add('hidden');
+      }
+    }
+
     if (isHost) {
       startGameBtn.classList.remove('hidden');
       waitHostNotice.classList.add('hidden');
@@ -506,6 +560,17 @@
       hostCommandBar.classList.add('hidden');
     }
 
+    // Active speaker bar
+    if (activeSpeakerBar) {
+      const isMyTurn = (gameState.phase === 'turns' && gameState.active_player_id === gameState.my_id);
+      if (isMyTurn) {
+        activeSpeakerBar.classList.remove('hidden');
+        if (speakerTimerVal) speakerTimerVal.textContent = currentSec;
+      } else {
+        activeSpeakerBar.classList.add('hidden');
+      }
+    }
+
     // Tabs info
     const survivorsCountEl = document.getElementById('tabSurvivorsCount');
     if (survivorsCountEl) survivorsCountEl.textContent = (gameState.players || []).length;
@@ -547,8 +612,25 @@
   // --- TAB 1: SURVIVORS GRID (ALL PLAYERS) ---
   function renderSurvivorsGrid() {
     survivorsGrid.innerHTML = '';
+    const allPlayers = gameState.players || [];
 
-    gameState.players.forEach(p => {
+    // Update filter counts
+    const totalCount = allPlayers.length;
+    const aliveCount = allPlayers.filter(p => !p.is_exiled).length;
+    const exiledCount = allPlayers.filter(p => p.is_exiled).length;
+
+    if (filterAllCount) filterAllCount.textContent = totalCount;
+    if (filterAliveCount) filterAliveCount.textContent = aliveCount;
+    if (filterExiledCount) filterExiledCount.textContent = exiledCount;
+
+    let filtered = allPlayers;
+    if (currentSurvivorFilter === 'alive') {
+      filtered = allPlayers.filter(p => !p.is_exiled);
+    } else if (currentSurvivorFilter === 'exiled') {
+      filtered = allPlayers.filter(p => p.is_exiled);
+    }
+
+    filtered.forEach(p => {
       const tile = document.createElement('div');
       tile.className = 'survivor-tile';
       if (p.is_active_turn) tile.classList.add('is-active-turn');
@@ -763,7 +845,13 @@
       'spc_lie_detector',
       'spc_silence',
       'spc_steal_profession',
-      'spc_swap_health'
+      'spc_swap_health',
+      'spc_swap_hobby',
+      'spc_swap_biology',
+      'spc_swap_fact',
+      'spc_disarm_luggage',
+      'spc_copy_profession',
+      'spc_peace_treaty'
     ].includes(spc.id);
     const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
 
@@ -1231,6 +1319,40 @@
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
   }
+
+  // --- FINISH SPEECH BUTTON ---
+  if (finishSpeechBtn) {
+    finishSpeechBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'finish_speech' }));
+    });
+  }
+
+  // --- TEMPO BUTTONS IN LOBBY ---
+  if (tempoBtnGroup) {
+    tempoBtnGroup.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tempo-btn');
+      if (!btn) return;
+      initAudio();
+      soundClick();
+      const sec = parseInt(btn.dataset.sec);
+      ws.send(jsonStr({ action: 'set_timer_duration', seconds: sec }));
+    });
+  }
+
+  // --- SURVIVORS FILTER PILLS ---
+  [filterAllBtn, filterAliveBtn, filterExiledBtn].forEach(btn => {
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      document.querySelectorAll('.filter-pill').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentSurvivorFilter = btn.dataset.filter;
+      renderSurvivorsGrid();
+    });
+  });
 
   // Quick view catastrophe button in HUD
   document.getElementById('viewCatastropheBtn').addEventListener('click', () => {

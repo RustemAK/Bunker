@@ -14,6 +14,11 @@
   <!-- Ambient CRT Scanline overlay -->
   <div class="scanlines"></div>
 
+  <!-- Auto-reconnect banner -->
+  <div id="reconnectBanner" class="reconnect-banner hidden">
+    <span class="pulse-icon">📶</span> Восстановление связи с Бункером...
+  </div>
+
   <!-- Audio Toggle & Status -->
   <header class="top-nav">
     <div class="brand">
@@ -104,6 +109,14 @@
         </div>
 
         <div class="waiting-footer">
+          <div id="tempoControlBox" class="tempo-control-box hidden">
+            <span class="tempo-label">⏱️ ТЕМП РЕЧИ ВЫЖИВШИХ:</span>
+            <div class="tempo-btn-group" id="tempoBtnGroup">
+              <button class="tempo-btn" data-sec="20">⚡ 20 сек (Быстро)</button>
+              <button class="tempo-btn active" data-sec="35">⏱️ 35 сек (Стандарт)</button>
+              <button class="tempo-btn" data-sec="50">☕ 50 сек (Размеренно)</button>
+            </div>
+          </div>
           <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий (поддерживается 2–16).</p>
           <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
             ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
@@ -199,6 +212,24 @@
 
       <!-- TAB 1: ALL SURVIVORS (GRID + TAP TO VIEW DOSSIER) -->
       <div id="tabSurvivors" class="tab-content active">
+        <!-- Active Speaker Bar (Finish Speech) -->
+        <div id="activeSpeakerBar" class="active-speaker-bar hidden">
+          <div class="speaker-status-box">
+            <span class="speaker-pulse">🔴</span>
+            <span>ИДЁТ ВАША РЕЧЬ! Время на выступление: <strong id="speakerTimerVal">--</strong>с</span>
+          </div>
+          <button id="finishSpeechBtn" class="btn btn-warning">
+            ✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД
+          </button>
+        </div>
+
+        <!-- Survivors Filter Bar -->
+        <div class="survivors-filter-bar">
+          <button class="filter-pill active" data-filter="all" id="filterAllBtn">👥 Все (<span id="filterAllCount">0</span>)</button>
+          <button class="filter-pill" data-filter="alive" id="filterAliveBtn">🛡️ В бункере (<span id="filterAliveCount">0</span>)</button>
+          <button class="filter-pill" data-filter="exiled" id="filterExiledBtn">❌ Изгнаны (<span id="filterExiledCount">0</span>)</button>
+        </div>
+
         <div class="tab-hint">
           💡 <strong>Нажмите на любого игрока</strong>, чтобы открыть его детальное досье со всеми вскрытыми характеристиками.
         </div>
