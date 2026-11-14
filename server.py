@@ -1025,6 +1025,12 @@ async def ws_handler(websocket):
                     }, ensure_ascii=False))
                     continue
 
+                target_id = data.get("target_id")
+                target_player = room.players.get(target_id)
+                if not target_player or target_player.is_exiled:
+                    # Cannot vote for an exiled player
+                    continue
+
                 if getattr(room, "is_tie_revote", False) and room.tie_data:
                     tied_ids = room.tie_data.get("tied_candidate_ids", [])
                     if target_id not in tied_ids:
@@ -1033,12 +1039,6 @@ async def ws_handler(websocket):
                             "message": "Во 2-м туре можно голосовать только за участников ничьей!"
                         }, ensure_ascii=False))
                         continue
-
-                target_id = data.get("target_id")
-                target_player = room.players.get(target_id)
-                if not target_player or target_player.is_exiled:
-                    # Cannot vote for an exiled player
-                    continue
 
                 if target_player.immunity_this_round:
                     await websocket.send(json.dumps({
