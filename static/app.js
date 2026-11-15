@@ -128,6 +128,23 @@
   let currentSurvivorFilter = 'all';
   let pingInterval = null;
 
+  // Header Nav & Leave Room
+  const rulesHelpBtn = document.getElementById('rulesHelpBtn');
+  const leaveRoomNavBtn = document.getElementById('leaveRoomNavBtn');
+  const leaveLobbyBtn = document.getElementById('leaveLobbyBtn');
+
+  // Rules Modal
+  const rulesModal = document.getElementById('rulesModal');
+  const closeRulesModalBtn = document.getElementById('closeRulesModalBtn');
+  const closeRulesModalConfirmBtn = document.getElementById('closeRulesModalConfirmBtn');
+
+  // Round Roadmap & Smart Guidance Banner
+  const roundRoadmap = document.getElementById('roundRoadmap');
+  const smartGuidanceBanner = document.getElementById('smartGuidanceBanner');
+  const guidanceIcon = document.getElementById('guidanceIcon');
+  const guidanceTitle = document.getElementById('guidanceTitle');
+  const guidanceDesc = document.getElementById('guidanceDesc');
+  const guidanceActionBtn = document.getElementById('guidanceActionBtn');
 
   // Special Card
   const mySpecialName = document.getElementById('mySpecialName');
@@ -354,6 +371,17 @@
       return;
     }
 
+    if (msg.type === 'kicked') {
+      alert(msg.message || 'Вы были исключены из лобби.');
+      resetToLobby();
+      return;
+    }
+
+    if (msg.type === 'room_left') {
+      resetToLobby();
+      return;
+    }
+
     if (msg.type === 'timer_tick') {
       const sec = msg.seconds;
       if (speechTimerNum) speechTimerNum.textContent = sec;
@@ -398,14 +426,52 @@
     }
   }
 
+  // --- ROOM EXIT & RESET LOGIC ---
+  function resetToLobby() {
+    localStorage.removeItem('bunker_player_id');
+    localStorage.removeItem('bunker_room_code');
+    myId = null;
+    currentRoomCode = null;
+    gameState = null;
+    if (roomBadge) roomBadge.classList.add('hidden');
+    if (leaveRoomNavBtn) leaveRoomNavBtn.classList.add('hidden');
+    showScreen(screenLobby);
+  }
+
+  function leaveCurrentRoom() {
+    if (!gameState) {
+      resetToLobby();
+      return;
+    }
+    const isGameActive = (gameState.status !== 'lobby');
+    const confirmText = isGameActive
+      ? 'Вы уверены, что хотите выйти из игры? Вы покинете убежище.'
+      : 'Вы уверены, что хотите выйти из лобби?';
+
+    if (confirm(confirmText)) {
+      initAudio();
+      soundClick();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(jsonStr({ action: 'leave_room' }));
+      }
+      resetToLobby();
+    }
+  }
+
   // --- RENDER APPLICATION ---
   function renderApp() {
-    if (!gameState) return;
+    if (!gameState) {
+      if (roomBadge) roomBadge.classList.add('hidden');
+      if (leaveRoomNavBtn) leaveRoomNavBtn.classList.add('hidden');
+      showScreen(screenLobby);
+      return;
+    }
 
-    // Room badge
+    // Room badge & Exit button in header
     if (gameState.room_code) {
       roomBadge.classList.remove('hidden');
       roomCodeDisplay.textContent = gameState.room_code;
+      if (leaveRoomNavBtn) leaveRoomNavBtn.classList.remove('hidden');
     }
 
     // Screen Router
@@ -435,20 +501,43 @@
     if (lobbyCapNum) lobbyCapNum.textContent = `${capacity} из ${n}`;
 
     lobbyPlayersList.innerHTML = '';
+    const isHost = (gameState.host_id === gameState.my_id);
+
     gameState.players.forEach(p => {
       const card = document.createElement('div');
       card.className = 'player-lobby-card';
+      const isMe = (p.id === gameState.my_id);
+      let kickBtnHtml = '';
+      if (isHost && !isMe) {
+        kickBtnHtml = `<button class="kick-player-btn" title="Исключить из лобби">✕ Исключить</button>`;
+      }
+
       card.innerHTML = `
         <span class="p-avatar">${p.avatar}</span>
-        <div>
-          <div class="p-name">${escapeHtml(p.name)} ${p.id === gameState.my_id ? '(Вы)' : ''}</div>
+        <div style="flex-grow: 1;">
+          <div class="p-name">${escapeHtml(p.name)} ${isMe ? '(Вы)' : ''}</div>
           <div class="p-role">${p.is_host ? '👑 Создатель бункера' : 'Выживший'}</div>
         </div>
+        ${kickBtnHtml}
       `;
+
+      if (isHost && !isMe) {
+        const kickBtn = card.querySelector('.kick-player-btn');
+        if (kickBtn) {
+          kickBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm(`Исключить игрока ${p.name} из лобби?`)) {
+              initAudio();
+              soundClick();
+              ws.send(jsonStr({ action: 'kick_player', target_id: p.id }));
+            }
+          });
+        }
+      }
+
       lobbyPlayersList.appendChild(card);
     });
 
-    const isHost = (gameState.host_id === gameState.my_id);
     if (tempoControlBox) {
       if (isHost) {
         tempoControlBox.classList.remove('hidden');
@@ -577,6 +666,9 @@
     const revPairs = (gameState.bunker_threat_pairs || []).filter(p => p.revealed).length;
     const bunkerRevEl = document.getElementById('tabBunkerRevealed');
     if (bunkerRevEl) bunkerRevEl.textContent = `${revPairs}/5`;
+
+    updateRoundRoadmap();
+    updateSmartGuidanceBanner();
 
     renderSurvivorsGrid();
     renderMyDeck();
@@ -791,8 +883,23 @@
       const cardEl = document.createElement('div');
       cardEl.className = 'game-card ' + (card.revealed ? 'revealed' : 'secret');
 
-      const isEligibleToReveal = isMyTurn && !card.revealed && (!me.is_exiled) &&
-        (gameState.round > 1 || cat === 'profession');
+      const isR1 = (gameState.round === 1);
+      const isEligibleToReveal = isMyTurn && !card.revealed && (!me.is_exiled) && (!isR1 || cat === 'profession');
+      const isRecommended = isMyTurn && isR1 && cat === 'profession' && !card.revealed;
+
+      if (isRecommended) {
+        cardEl.classList.add('card-recommended-turn');
+      }
+
+      let btnLabel = '👁️ ВСКРЫТЬ КАРТУ ВСЕМ';
+      if (isRecommended) {
+        btnLabel = '👁️ ВСКРЫТЬ ПРОФЕССИЮ (РАУНД 1)';
+      }
+
+      let lockHint = '';
+      if (isR1 && cat !== 'profession' && !card.revealed) {
+        lockHint = '<div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 6px;">🔒 Откроется со 2-го раунда</div>';
+      }
 
       cardEl.innerHTML = `
         <div class="card-top">
@@ -804,7 +911,8 @@
         <div class="card-title">${escapeHtml(card.name)} ${card.icon || ''}</div>
         <div class="card-desc">${escapeHtml(card.desc || '')}</div>
         ${card.quote ? `<div class="card-quote">${escapeHtml(card.quote)}</div>` : ''}
-        ${isEligibleToReveal ? `<button class="reveal-btn" data-cat="${cat}">👁️ ВСКРЫТЬ КАРТУ ВСЕМ</button>` : ''}
+        ${lockHint}
+        ${isEligibleToReveal ? `<button class="reveal-btn" data-cat="${cat}">${btnLabel}</button>` : ''}
       `;
 
       if (isEligibleToReveal) {
@@ -1362,6 +1470,137 @@
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     document.querySelector('[data-tab="tabBunker"]').classList.add('active');
     tabBunker.classList.add('active');
+  });
+
+  // --- VISUAL ROUND ROADMAP ---
+  function updateRoundRoadmap() {
+    if (!roundRoadmap || !gameState) return;
+
+    const roundNum = gameState.round || 1;
+    const isFinale = (gameState.status === 'finale');
+
+    roundRoadmap.querySelectorAll('.roadmap-step').forEach(step => {
+      const rAttr = step.dataset.round;
+      step.classList.remove('active', 'passed');
+
+      if (rAttr === 'finale') {
+        if (isFinale) {
+          step.classList.add('active');
+        }
+      } else {
+        const rVal = parseInt(rAttr, 10);
+        if (isFinale || rVal < roundNum) {
+          step.classList.add('passed');
+        } else if (rVal === roundNum) {
+          step.classList.add('active');
+        }
+      }
+    });
+  }
+
+  // --- SMART ACTION GUIDANCE BANNER ---
+  function updateSmartGuidanceBanner() {
+    if (!smartGuidanceBanner || !gameState) return;
+
+    const isMyTurn = (gameState.phase === 'turns' && gameState.active_player_id === gameState.my_id);
+    const activePlayer = (gameState.players || []).find(p => p.id === gameState.active_player_id);
+    const activeName = activePlayer ? activePlayer.name : 'Игрок';
+
+    smartGuidanceBanner.classList.remove('my-turn-highlight');
+    if (guidanceActionBtn) guidanceActionBtn.classList.add('hidden');
+
+    if (gameState.status === 'finale') {
+      if (guidanceIcon) guidanceIcon.textContent = '🏆';
+      if (guidanceTitle) guidanceTitle.textContent = 'ФИНАЛ: ВХОД В БУНКЕР';
+      if (guidanceDesc) guidanceDesc.textContent = 'Выжившие запечатали шлюзы! Все 6-е карты открыты. Запустите ИИ-анализ для расчёта судьбы колонии.';
+      return;
+    }
+
+    if (gameState.phase === 'turns') {
+      if (isMyTurn) {
+        smartGuidanceBanner.classList.add('my-turn-highlight');
+        if (guidanceIcon) guidanceIcon.textContent = '🎤';
+        if (guidanceTitle) guidanceTitle.textContent = '🚨 СЕЙЧАС ВАШ ХОД! ОТКРОЙТЕ КАРТУ';
+        if (guidanceDesc) {
+          if (gameState.round === 1) {
+            guidanceDesc.textContent = 'В 1-м раунде все вскрывают Профессию. Докажите, почему ваша специальность спасёт команду!';
+          } else {
+            guidanceDesc.textContent = `Раунд ${gameState.round}: выберите и вскройте одну из закрытых характеристик.`;
+          }
+        }
+        if (guidanceActionBtn) {
+          guidanceActionBtn.classList.remove('hidden');
+          guidanceActionBtn.textContent = '👉 Мои карты (Вскрыть)';
+          guidanceActionBtn.onclick = () => {
+            initAudio();
+            soundClick();
+            switchToTab('tabMyDeck');
+          };
+        }
+      } else {
+        if (guidanceIcon) guidanceIcon.textContent = '🎧';
+        if (guidanceTitle) guidanceTitle.textContent = `Сейчас выступает: ${escapeHtml(activeName)}`;
+        if (guidanceDesc) guidanceDesc.textContent = 'Игрок рассказывает о себе и открывает карту. Внимательно слушайте и оценивайте его пользу!';
+      }
+    } else if (gameState.phase === 'debate') {
+      if (guidanceIcon) guidanceIcon.textContent = '⚖️';
+      if (guidanceTitle) guidanceTitle.textContent = `ФАЗА ДЕБАТОВ (РАУНД ${gameState.round})`;
+      if (guidanceDesc) {
+        if (gameState.round_has_voting) {
+          guidanceDesc.textContent = 'Все карты раунда открыты! Обсудите кандидатов вслух: по итогам раунда будет изгнан 1 человек.';
+        } else {
+          guidanceDesc.textContent = 'Знакомство завершено! Обсудите профессии. В этом раунде никто не изгоняется.';
+        }
+      }
+    } else if (gameState.phase === 'voting') {
+      if (guidanceIcon) guidanceIcon.textContent = '🗳️';
+      if (guidanceTitle) guidanceTitle.textContent = `ТАЙНОЕ ГОЛОСОВАНИЕ (РАУНД ${gameState.round})`;
+      if (guidanceDesc) guidanceDesc.textContent = 'Бюллетень открыт на экране. Выберите, кого изгнать из убежища.';
+    } else if (gameState.phase === 'tie_decision') {
+      if (guidanceIcon) guidanceIcon.textContent = '⚖️';
+      if (guidanceTitle) guidanceTitle.textContent = 'НИЧЬЯ В ГОЛОСОВАНИИ!';
+      if (guidanceDesc) guidanceDesc.textContent = 'Голоса разделились поровну. Командир решает: провести переголосование или отложить изгнание.';
+    } else if (gameState.phase === 'vote_results') {
+      if (guidanceIcon) guidanceIcon.textContent = '❌';
+      if (guidanceTitle) guidanceTitle.textContent = `ИЗГНАНИЕ: ${escapeHtml(gameState.last_exiled || 'Никто')}`;
+      if (guidanceDesc) guidanceDesc.textContent = 'Карты изгнанного раскрыты. Командир бункера переводит игру в следующий раунд.';
+    }
+  }
+
+  function switchToTab(tabId) {
+    tabButtons.forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tabId);
+    });
+    document.querySelectorAll('.tab-content').forEach(c => {
+      c.classList.toggle('active', c.id === tabId);
+    });
+  }
+
+  // --- LEAVE ROOM BUTTONS ---
+  if (leaveRoomNavBtn) {
+    leaveRoomNavBtn.addEventListener('click', leaveCurrentRoom);
+  }
+  if (leaveLobbyBtn) {
+    leaveLobbyBtn.addEventListener('click', leaveCurrentRoom);
+  }
+
+  // --- RULES MODAL LISTENERS ---
+  if (rulesHelpBtn) {
+    rulesHelpBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      if (rulesModal) rulesModal.classList.remove('hidden');
+    });
+  }
+
+  [closeRulesModalBtn, closeRulesModalConfirmBtn].forEach(btn => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        initAudio();
+        soundClick();
+        if (rulesModal) rulesModal.classList.add('hidden');
+      });
+    }
   });
 
   // Start WS on load

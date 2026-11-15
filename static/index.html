@@ -29,6 +29,8 @@
       <div id="roomBadge" class="room-badge hidden">
         КОМНАТА: <span id="roomCodeDisplay">----</span>
       </div>
+      <button id="rulesHelpBtn" class="btn-subtle" title="Как играть?">❓ Правила</button>
+      <button id="leaveRoomNavBtn" class="btn-subtle text-danger hidden" title="Выйти из комнаты">🚪 Выйти</button>
       <button id="soundToggleBtn" class="icon-btn" title="Звуки терминала">🔊</button>
     </div>
   </header>
@@ -117,12 +119,22 @@
               <button class="tempo-btn" data-sec="50">☕ 50 сек (Размеренно)</button>
             </div>
           </div>
-          <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий (поддерживается 2–16).</p>
-          <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
-            ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
-          </button>
+          <div class="lobby-help-tip glass-panel">
+            <strong style="color: var(--color-amber);">💡 Суть игры простыми словами:</strong>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+              Бункер вмещает ровно половину игроков. Впереди 5 раундов: в каждом вы открываете по 1 карте и доказываете свою пользу. Со 2-го раунда начинаются тайные голосования за изгнание!
+            </p>
+          </div>
+          <div class="waiting-actions-row">
+            <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
+              ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
+            </button>
+            <button id="leaveLobbyBtn" class="btn btn-secondary btn-block">
+              🚪 ВЫЙТИ ИЗ ЛОББИ
+            </button>
+          </div>
           <div id="waitHostNotice" class="wait-notice text-amber">
-            Ожидаем, пока создатель бункера начнёт игру...
+            ⏳ Ожидаем, пока создатель бункера запустит игру...
           </div>
         </div>
       </div>
@@ -138,7 +150,7 @@
             РАУНД <span id="currentRoundDisplay" class="round-num">1</span>/5
           </div>
           <div class="capacity-badge" id="hudCapacityBadge">
-            🛡️ МЕСТ В БУНКЕРЕ: <span id="hudCapacityDisplay" class="text-amber">--</span>
+            🛡️ МЕСТ: <span id="hudCapacityDisplay" class="text-amber">--</span>
           </div>
           <div class="phase-badge" id="phaseDisplay">ФАЗА: ВСКРЫТИЕ КАРТ</div>
         </div>
@@ -158,6 +170,57 @@
             <span id="speechTimerNum">30</span>с
           </div>
         </div>
+      </div>
+
+      <!-- VISUAL ROUND ROADMAP (КАРТА РАУНДОВ) -->
+      <div class="round-roadmap glass-panel" id="roundRoadmap">
+        <div class="roadmap-step active" data-round="1">
+          <span class="step-num">1</span>
+          <span class="step-label">Профессия</span>
+          <span class="step-sub">0 изгнаний</span>
+        </div>
+        <div class="roadmap-arrow">➔</div>
+        <div class="roadmap-step" data-round="2">
+          <span class="step-num">2</span>
+          <span class="step-label">Биология</span>
+          <span class="step-sub">-1 изгнан</span>
+        </div>
+        <div class="roadmap-arrow">➔</div>
+        <div class="roadmap-step" data-round="3">
+          <span class="step-num">3</span>
+          <span class="step-label">Здоровье</span>
+          <span class="step-sub">-1 изгнан</span>
+        </div>
+        <div class="roadmap-arrow">➔</div>
+        <div class="roadmap-step" data-round="4">
+          <span class="step-num">4</span>
+          <span class="step-label">Хобби</span>
+          <span class="step-sub">-1 изгнан</span>
+        </div>
+        <div class="roadmap-arrow">➔</div>
+        <div class="roadmap-step" data-round="5">
+          <span class="step-num">5</span>
+          <span class="step-label">Багаж</span>
+          <span class="step-sub">-1 изгнан</span>
+        </div>
+        <div class="roadmap-arrow">➔</div>
+        <div class="roadmap-step step-finale" data-round="finale">
+          <span class="step-num">🏆</span>
+          <span class="step-label">Финал</span>
+          <span class="step-sub">Оценка ИИ</span>
+        </div>
+      </div>
+
+      <!-- SMART ACTION GUIDANCE BANNER (ЧТО ДЕЛАТЬ СЕЙЧАС) -->
+      <div id="smartGuidanceBanner" class="smart-guidance-banner glass-panel">
+        <div class="guidance-icon-box" id="guidanceIcon">💡</div>
+        <div class="guidance-content">
+          <div class="guidance-title" id="guidanceTitle">Загрузка фазы...</div>
+          <div class="guidance-desc" id="guidanceDesc">Подождите...</div>
+        </div>
+        <button id="guidanceActionBtn" class="btn btn-warning btn-sm hidden">
+          👉 Перейти к моим картам
+        </button>
       </div>
 
       <!-- PHASE DEBATE BANNER -->
@@ -535,6 +598,56 @@
       <div class="modal-footer">
         <button id="confirmSpecialTargetBtn" class="btn btn-primary btn-block" disabled>
           ⚡ ПРИМЕНИТЬ КОЗЫРЬ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 6: RULES MODAL (СПРАВОЧНИК ПРАВИЛ) -->
+  <div id="rulesModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 540px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge">📖 ПАМЯТКА ВЫЖИВШЕГО</div>
+          <h2>Как играть в «Бункер 3.3»</h2>
+        </div>
+        <button id="closeRulesModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+      <div class="rules-modal-body" style="display: flex; flex-direction: column; gap: 12px; margin: 16px 0; font-size: 0.9rem;">
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-emerald);">
+          <strong style="color: var(--color-emerald-light);">🛡️ 1. Главная цель:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            Попасть в число счастливчиков, которые войдут в бункер. Бункер вмещает <strong>ровно половину</strong> игроков (например, 4 из 8).
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-amber);">
+          <strong style="color: var(--color-amber);">🎤 2. Ход раунда (всего 5 раундов):</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            В каждом раунде игроки по очереди открывают 1 карту из руки и кратко объясняют, как эта черта поможет колонии выжить при данной Катастрофе. В 1-м раунде все открывают <strong>Профессию</strong>.
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-danger);">
+          <strong style="color: var(--color-danger-light);">⚖️ 3. Дебаты и тайное голосование:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            Когда все открыли карты раунда, начинаются дебаты. Затем все тайно голосуют, кого изгнать на поверхность. Набравший больше всех голосов изгоняется и раскрывает все оставшиеся карты! <em>(В 1-м раунде изгнания нет — это знакомство).</em>
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-cyan);">
+          <strong style="color: var(--color-cyan);">⚡ 4. Особое условие (Козырь):</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            У каждого игрока есть 1 тайная спецкарта (иммунитет от изгнания, обмен багажом, проверка на детекторе и т.д.). Разыграть её можно 1 раз за игру во вкладке «Мои карты».
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid #a855f7;">
+          <strong style="color: #c084fc;">🧠 5. Финал и бортовой ИИ:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            В конце 5-го раунда выжившие входят в бункер, вскрывают 6-ю скрытую карту («Факт»), а бортовой ИИ рассчитывает шансы группы и рассказывает хронику 1 года изоляции!
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="closeRulesModalConfirmBtn" class="btn btn-primary btn-block">
+          ПОНЯТНО, В БОЙ! 🚀
         </button>
       </div>
     </div>

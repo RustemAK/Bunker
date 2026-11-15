@@ -1889,3 +1889,195 @@ input[type="text"]:focus {
   font-weight: 700;
 }
 
+/* ================= VISUAL ROUND ROADMAP ================= */
+.round-roadmap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  margin-bottom: 12px;
+  overflow-x: auto;
+  gap: 6px;
+  scrollbar-width: none;
+}
+.round-roadmap::-webkit-scrollbar { display: none; }
+
+.roadmap-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 68px;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle);
+  transition: all 0.3s;
+}
+
+.roadmap-step .step-num {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--text-dim);
+}
+
+.roadmap-step .step-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.roadmap-step .step-sub {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.roadmap-step.active {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: var(--color-amber);
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.35);
+  transform: translateY(-1px);
+}
+
+.roadmap-step.active .step-num {
+  color: var(--color-amber-light);
+}
+
+.roadmap-step.active .step-label {
+  color: #fff;
+  font-weight: 700;
+}
+
+.roadmap-step.active .step-sub {
+  color: var(--color-amber);
+  font-weight: 700;
+}
+
+.roadmap-step.passed {
+  opacity: 0.6;
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.roadmap-step.passed .step-num {
+  color: var(--color-emerald);
+}
+
+.roadmap-arrow {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+/* ================= SMART GUIDANCE BANNER ================= */
+.smart-guidance-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  background: linear-gradient(90deg, rgba(15, 23, 42, 0.9), rgba(30, 41, 59, 0.9));
+  border: 1px solid var(--border-glow);
+  border-left: 4px solid var(--color-amber);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+.smart-guidance-banner.my-turn-highlight {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.22), rgba(239, 68, 68, 0.18));
+  border-color: var(--color-amber);
+  border-left: 4px solid var(--color-amber-light);
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4);
+  animation: myTurnGlow 2s infinite ease-in-out;
+}
+
+@keyframes myTurnGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(245, 158, 11, 0.6); }
+}
+
+.guidance-icon-box {
+  font-size: 1.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.guidance-content {
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.guidance-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #fff;
+  line-height: 1.25;
+}
+
+.guidance-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+#guidanceActionBtn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* ================= LOBBY & WAITING ROOM ENHANCEMENTS ================= */
+.lobby-help-tip {
+  padding: 12px 14px;
+  margin: 12px 0;
+  border-left: 3px solid var(--color-amber);
+  text-align: left;
+}
+
+.waiting-actions-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+@media (min-width: 600px) {
+  .waiting-actions-row {
+    flex-direction: row;
+  }
+}
+
+.player-lobby-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.kick-player-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--color-danger);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 3px 7px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.kick-player-btn:hover {
+  background: var(--color-danger);
+  color: #fff;
+}
+
+

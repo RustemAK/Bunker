@@ -877,6 +877,78 @@ async def ws_handler(websocket):
                 }, ensure_ascii=False))
                 await broadcast_room(room)
 
+            elif msg_type == "leave_room":
+                if not current_room_code or current_room_code not in ROOMS:
+                    current_room_code = None
+                    current_player_id = None
+                    await websocket.send(json.dumps({"type": "room_left"}, ensure_ascii=False))
+                    continue
+
+                room = ROOMS[current_room_code]
+                leaving_player_id = current_player_id
+                leaving_player = room.players.get(leaving_player_id)
+                leaving_name = leaving_player.name if leaving_player else "Игрок"
+
+                if room.status == "lobby":
+                    if leaving_player_id in room.players:
+                        del room.players[leaving_player_id]
+                    if leaving_player_id in room.turn_order:
+                        room.turn_order.remove(leaving_player_id)
+
+                    if not room.players:
+                        del ROOMS[current_room_code]
+                    else:
+                        if room.host_id == leaving_player_id:
+                            room.host_id = next(iter(room.players.keys()))
+                            new_host = room.players[room.host_id]
+                            room.add_log(f"👑 {new_host.name} стал новым командиром бункера.")
+                        room.add_log(f"🚪 {leaving_name} покинул шлюз бункера.")
+                        await broadcast_room(room)
+                else:
+                    if leaving_player:
+                        leaving_player.is_connected = False
+                        leaving_player.is_exiled = True
+                        for c in leaving_player.hand.values():
+                            c["revealed"] = True
+                        room.add_log(f"🚪 {leaving_name} покинул бункер.")
+
+                        if room.get_active_player_id() == leaving_player_id and room.phase == "turns":
+                            next_player_turn(room)
+
+                        if room.phase == "voting":
+                            eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected and not getattr(p, "is_silenced", False)]
+                            if len(eligible) > 0 and all(p.voted_for is not None for p in eligible):
+                                resolve_voting(room)
+
+                        await broadcast_room(room)
+
+                current_room_code = None
+                current_player_id = None
+                await websocket.send(json.dumps({"type": "room_left"}, ensure_ascii=False))
+
+            elif msg_type == "kick_player":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                target_id = data.get("target_id")
+                if target_id and target_id in room.players and target_id != room.host_id:
+                    kicked_p = room.players[target_id]
+                    if kicked_p.ws:
+                        try:
+                            await kicked_p.ws.send(json.dumps({
+                                "type": "kicked",
+                                "message": "Вы были исключены из лобби командиром."
+                            }, ensure_ascii=False))
+                        except Exception:
+                            pass
+                    del room.players[target_id]
+                    if target_id in room.turn_order:
+                        room.turn_order.remove(target_id)
+                    room.add_log(f"🚫 {kicked_p.name} исключён из лобби командиром.")
+                    await broadcast_room(room)
+
             elif msg_type == "start_game":
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
