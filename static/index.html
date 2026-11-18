@@ -203,53 +203,16 @@
         </div>
       </div>
 
-      <!-- VISUAL ROUND ROADMAP (КАРТА РАУНДОВ) -->
-      <div class="round-roadmap glass-panel" id="roundRoadmap">
-        <div class="roadmap-step active" data-round="1">
-          <span class="step-num">1</span>
-          <span class="step-label">Профессия</span>
-          <span class="step-sub">0 изгнаний</span>
-        </div>
-        <div class="roadmap-arrow">➔</div>
-        <div class="roadmap-step" data-round="2">
-          <span class="step-num">2</span>
-          <span class="step-label">Биология</span>
-          <span class="step-sub">-1 изгнан</span>
-        </div>
-        <div class="roadmap-arrow">➔</div>
-        <div class="roadmap-step" data-round="3">
-          <span class="step-num">3</span>
-          <span class="step-label">Здоровье</span>
-          <span class="step-sub">-1 изгнан</span>
-        </div>
-        <div class="roadmap-arrow">➔</div>
-        <div class="roadmap-step" data-round="4">
-          <span class="step-num">4</span>
-          <span class="step-label">Хобби</span>
-          <span class="step-sub">-1 изгнан</span>
-        </div>
-        <div class="roadmap-arrow">➔</div>
-        <div class="roadmap-step" data-round="5">
-          <span class="step-num">5</span>
-          <span class="step-label">Багаж</span>
-          <span class="step-sub">-1 изгнан</span>
-        </div>
-        <div class="roadmap-arrow">➔</div>
-        <div class="roadmap-step step-finale" data-round="finale">
-          <span class="step-num">🏆</span>
-          <span class="step-label">Финал</span>
-          <span class="step-sub">Оценка ИИ</span>
-        </div>
-      </div>
-
       <!-- SMART ACTION GUIDANCE BANNER (ЧТО ДЕЛАТЬ СЕЙЧАС) -->
       <div id="smartGuidanceBanner" class="smart-guidance-banner glass-panel">
-        <div class="guidance-icon-box" id="guidanceIcon">💡</div>
-        <div class="guidance-content">
-          <div class="guidance-title" id="guidanceTitle">Загрузка фазы...</div>
-          <div class="guidance-desc" id="guidanceDesc">Подождите...</div>
+        <div class="guidance-main">
+          <div class="guidance-icon-box" id="guidanceIcon">💡</div>
+          <div class="guidance-content">
+            <div class="guidance-title" id="guidanceTitle">Загрузка фазы...</div>
+            <div class="guidance-desc" id="guidanceDesc">Подождите...</div>
+          </div>
         </div>
-        <button id="guidanceActionBtn" class="btn btn-warning btn-sm hidden">
+        <button id="guidanceActionBtn" class="btn btn-warning guidance-action-btn hidden">
           👉 Перейти к моим картам
         </button>
       </div>
@@ -312,30 +275,26 @@
       <!-- MAIN TABS: 1. Мои Карты | 2. Все Выжившие | 3. Бункер и Угрозы -->
       <nav class="game-tabs">
         <button class="tab-btn active" data-tab="tabMyDeck">
-          🗂️ МОИ КАРТЫ <span id="myDeckNotice" class="badge-dot hidden"></span>
+          <span>🗂️</span> <span class="tab-label">Мои карты</span> <span id="myDeckNotice" class="badge-dot hidden"></span>
         </button>
         <button class="tab-btn" data-tab="tabSurvivors">
-          👥 ВСЕ ВЫЖИВШИЕ (<span id="tabSurvivorsCount">0</span>)
+          <span>👥</span> <span class="tab-label">Выжившие</span> (<span id="tabSurvivorsCount">0</span>)
         </button>
         <button class="tab-btn" data-tab="tabBunker">
-          📦 БУНКЕР И УГРОЗЫ (<span id="tabBunkerRevealed">1/5</span>)
+          <span>📦</span> <span class="tab-label">Бункер</span> (<span id="tabBunkerRevealed">1/5</span>)
         </button>
       </nav>
 
       <!-- TAB 1: MY DECK & SECRET CARDS (PRIMARY & ACTIVE BY DEFAULT) -->
       <div id="tabMyDeck" class="tab-content active">
         <div class="my-deck-header">
-          <div>
-            <h3>ЛИЧНЫЕ КАРТЫ ВЫЖИВШЕГО</h3>
-            <p class="hint-text">Скрытые карты видите только вы. Вскрывайте их в свой ход для аргументации.</p>
-          </div>
           <div id="myTurnAlert" class="my-turn-alert hidden">
             🚨 ВАШ ХОД! Выберите карту для вскрытия
           </div>
         </div>
 
-        <div id="myCardsGrid" class="cards-grid">
-          <!-- 6 player cards generated here -->
+        <div id="myCardsGrid" class="cards-list">
+          <!-- 6 player cards generated here as a compact list -->
         </div>
 
         <!-- Special Condition Card -->
@@ -350,7 +309,7 @@
         </div>
       </div>
 
-      <!-- TAB 2: ALL SURVIVORS (GRID + TAP TO VIEW DOSSIER) -->
+      <!-- TAB 2: ALL SURVIVORS (COMPACT LIST + TAP TO VIEW DOSSIER) -->
       <div id="tabSurvivors" class="tab-content">
         <!-- Survivors Filter Bar -->
         <div class="survivors-filter-bar">
@@ -359,11 +318,8 @@
           <button class="filter-pill" data-filter="exiled" id="filterExiledBtn">❌ Изгнаны (<span id="filterExiledCount">0</span>)</button>
         </div>
 
-        <div class="tab-hint">
-          💡 <strong>Нажмите на любого игрока</strong>, чтобы открыть его детальное досье со всеми вскрытыми характеристиками.
-        </div>
-        <div id="survivorsGrid" class="survivors-grid">
-          <!-- Dynamically populated with player cards -->
+        <div id="survivorsGrid" class="survivors-list">
+          <!-- Dynamically populated with compact survivor list items -->
         </div>
 
         <!-- Host Emergency Controls -->

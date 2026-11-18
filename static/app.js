@@ -202,8 +202,7 @@
   const closeRulesModalBtn = document.getElementById('closeRulesModalBtn');
   const closeRulesModalConfirmBtn = document.getElementById('closeRulesModalConfirmBtn');
 
-  // Round Roadmap & Smart Guidance Banner
-  const roundRoadmap = document.getElementById('roundRoadmap');
+  // Smart Guidance Banner
   const smartGuidanceBanner = document.getElementById('smartGuidanceBanner');
   const guidanceIcon = document.getElementById('guidanceIcon');
   const guidanceTitle = document.getElementById('guidanceTitle');
@@ -836,7 +835,6 @@
     const bunkerRevEl = document.getElementById('tabBunkerRevealed');
     if (bunkerRevEl) bunkerRevEl.textContent = `${revPairs}/5`;
 
-    updateRoundRoadmap();
     updateSmartGuidanceBanner();
 
     renderSurvivorsGrid();
@@ -893,68 +891,57 @@
 
     filtered.forEach(p => {
       const tile = document.createElement('div');
-      tile.className = 'survivor-tile';
+      tile.className = 'survivor-list-row';
       if (p.is_active_turn) tile.classList.add('is-active-turn');
       if (p.is_exiled) tile.classList.add('is-exiled');
 
       // Count revealed cards
       const handValues = Object.values(p.hand);
       const revealedCards = handValues.filter(c => c.revealed);
-      const hiddenCount = 6 - revealedCards.length;
 
-      let statusHtml = '<span class="tile-status alive">Жив в бункере</span>';
+      let statusHtml = '<span class="tile-status alive">🛡️ В бункере</span>';
       if (p.is_exiled) {
-        statusHtml = '<span class="tile-status exiled">Изгнан</span>';
+        statusHtml = '<span class="tile-status exiled">❌ Изгнан</span>';
       } else if (p.is_active_turn) {
-        statusHtml = '<span class="tile-status turn">🎤 ВЫСТУПАЕТ СЕЙЧАС</span>';
+        statusHtml = '<span class="tile-status turn">🎤 ВЫСТУПАЕТ</span>';
       }
       if (p.immunity_this_round) {
         statusHtml += ' <span class="tile-status" style="background: rgba(245, 158, 11, 0.2); border-color: var(--color-amber); color: var(--color-amber);">🛡️ Иммунитет</span>';
       }
       if (p.triple_vote) {
-        statusHtml += ' <span class="tile-status" style="background: rgba(16, 185, 129, 0.2); border-color: var(--color-emerald); color: var(--color-emerald);">🧪 Голос x3</span>';
-      }
-      if (p.retaliation_active) {
-        statusHtml += ' <span class="tile-status" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-danger); color: var(--color-danger);">🐶 Возмездие</span>';
+        statusHtml += ' <span class="tile-status" style="background: rgba(16, 185, 129, 0.2); border-color: var(--color-emerald); color: var(--color-emerald);">🧪 x3</span>';
       }
       if (p.is_silenced) {
-        statusHtml += ' <span class="tile-status" style="background: rgba(148, 163, 184, 0.2); border-color: #94a3b8; color: #94a3b8;">🔇 Молчание</span>';
+        statusHtml += ' <span class="tile-status" style="background: rgba(148, 163, 184, 0.2); border-color: #94a3b8; color: #94a3b8;">🔇 Молчит</span>';
       }
 
-      // Revealed pills
+      // Summary of revealed cards
       let pillsHtml = '';
-      revealedCards.slice(0, 3).forEach(c => {
-        pillsHtml += `
-          <div class="revealed-pill">
-            <span class="pill-category">${translateCategory(c.category)}:</span>
-            <strong>${escapeHtml(c.name || 'Раскрыто')}</strong> ${c.icon || ''}
-          </div>
-        `;
-      });
-      if (revealedCards.length > 3) {
-        pillsHtml += `<div class="revealed-pill text-amber">+ ещё ${revealedCards.length - 3} в досье</div>`;
+      if (revealedCards.length > 0) {
+        pillsHtml = revealedCards.map(c => `<strong>${translateCategory(c.category)}:</strong> ${escapeHtml(c.name || 'Раскрыто')}`).join(' • ');
+      } else {
+        pillsHtml = 'Характеристики пока не вскрыты';
       }
 
       tile.innerHTML = `
-        <div class="tile-header">
-          <span class="tile-avatar">${p.avatar}</span>
-          <div class="tile-info">
-            <div class="tile-name">
-              ${escapeHtml(p.name)} ${p.id === gameState.my_id ? '<em>(Вы)</em>' : ''}
+        <div class="survivor-row-left">
+          <span class="survivor-row-avatar">${p.avatar}</span>
+          <div class="survivor-row-info">
+            <div class="survivor-row-name-line">
+              <span class="survivor-row-name">${escapeHtml(p.name)}</span>
+              ${p.id === gameState.my_id ? '<span class="you-tag">Вы</span>' : ''}
+              ${statusHtml}
             </div>
-            ${statusHtml}
+            <div class="survivor-row-pills">
+              <span>${pillsHtml}</span>
+            </div>
           </div>
         </div>
-        <div class="tile-revealed-tags">
-          ${pillsHtml || '<div class="hint-text">Карты ещё не вскрыты</div>'}
-        </div>
-        <div class="tile-hidden-counter">
-          <span>🔒 Засекречено: ${hiddenCount}</span>
-          <span class="text-amber">Открыть досье 🔍</span>
+        <div class="survivor-row-right">
+          <span class="btn-dossier-pill">Досье 🔍</span>
         </div>
       `;
 
-      // TAP ON PLAYER OPENS THEIR DETAILED DOSSIER MODAL
       tile.addEventListener('click', () => {
         initAudio();
         soundClick();
@@ -1102,7 +1089,7 @@
       if (!card) return;
 
       const cardEl = document.createElement('div');
-      cardEl.className = 'game-card ' + (card.revealed ? 'revealed' : 'secret');
+      cardEl.className = 'game-card-row ' + (card.revealed ? 'revealed' : 'secret');
 
       const isR1 = (gameState.round === 1);
       const isEligibleToReveal = isMyTurn && !hasRevealedThisRound && !card.revealed && (!me.is_exiled) && (!isR1 || cat === 'profession');
@@ -1119,43 +1106,39 @@
         btnLabel = '👁️ ВСКРЫТЬ ПРОФЕССИЮ (РАУНД 1)';
       }
 
+      let statusBadge = card.revealed
+        ? '<span class="card-status-badge open">👁️ Открыта всем</span>'
+        : '<span class="card-status-badge locked">🔒 Только для вас</span>';
+
       let lockHint = '';
       if (isR1 && cat !== 'profession' && !card.revealed) {
-        lockHint = '<div class="card-lock-hint">🔒 Доступно для вскрытия со 2-го раунда</div>';
+        lockHint = '<span class="card-lock-hint-sm">🔒 Со 2-го раунда</span>';
       } else if (!isR1 && !isMyTurn && !card.revealed) {
-        lockHint = '<div class="card-lock-hint" style="color: var(--color-cyan);">✨ Доступно для вскрытия в ваш ход</div>';
-      } else if (isMyTurn && hasRevealedThisRound && !card.revealed) {
-        lockHint = '<div class="card-lock-hint">🔒 Лимит на этот раунд исчерпан (1 карта в раунд)</div>';
-      }
-
-      let revealedSpeechHint = '';
-      if (card.revealed && isMyTurn && hasRevealedThisRound) {
-        revealedSpeechHint = '<div class="card-revealed-hint">✅ Вскрыто! Выступайте с речью. Нажмите «Завершить речь», когда закончите.</div>';
+        lockHint = '<span class="card-lock-hint-sm" style="color: var(--color-cyan);">✨ В ваш ход</span>';
       }
 
       const badgeHtml = card.badge ? `<span class="card-badge-pill">${escapeHtml(card.badge)}</span>` : '';
-      const tipHtml = meta.tip ? `<div class="card-speech-tip"><strong>💡 КАК ЗАЩИТИТЬ КАРТУ:</strong> ${meta.tip}</div>` : '';
 
       cardEl.innerHTML = `
-        <div class="card-top">
-          <span class="card-category-tag">${meta.icon} ${meta.name}</span>
-          <span class="card-status-badge ${card.revealed ? 'open' : 'locked'}">
-            ${card.revealed ? '👁️ Открыта всем' : '🔒 Только для вас'}
-          </span>
+        <div class="card-row-top">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="card-row-cat">${meta.icon} ${meta.name}</span>
+            ${badgeHtml}
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            ${lockHint}
+            ${statusBadge}
+          </div>
         </div>
-        ${badgeHtml}
-        <div class="card-role-desc">${meta.role}</div>
-        <div class="card-title">${escapeHtml(card.name)} ${card.icon || ''}</div>
-        <div class="card-desc">${escapeHtml(card.desc || '')}</div>
-        ${card.quote ? `<div class="card-quote">${escapeHtml(card.quote)}</div>` : ''}
-        ${tipHtml}
-        ${lockHint}
-        ${revealedSpeechHint}
-        ${isEligibleToReveal ? `<button class="reveal-btn" data-cat="${cat}">${btnLabel}</button>` : ''}
+        <div class="card-row-title-line">
+          <div class="card-row-title">${escapeHtml(card.name)} ${card.icon || ''}</div>
+        </div>
+        <div class="card-row-desc">${escapeHtml(card.desc || '')}</div>
+        ${isEligibleToReveal ? `<button class="reveal-btn-compact" data-cat="${cat}">${btnLabel}</button>` : ''}
       `;
 
       if (isEligibleToReveal) {
-        const btn = cardEl.querySelector('.reveal-btn');
+        const btn = cardEl.querySelector('.reveal-btn-compact');
         btn.addEventListener('click', () => {
           initAudio();
           soundReveal();
@@ -1923,32 +1906,6 @@
       switchToTab('tabBunker');
     }
   });
-
-  // --- VISUAL ROUND ROADMAP ---
-  function updateRoundRoadmap() {
-    if (!roundRoadmap || !gameState) return;
-
-    const roundNum = gameState.round || 1;
-    const isFinale = (gameState.status === 'finale');
-
-    roundRoadmap.querySelectorAll('.roadmap-step').forEach(step => {
-      const rAttr = step.dataset.round;
-      step.classList.remove('active', 'passed');
-
-      if (rAttr === 'finale') {
-        if (isFinale) {
-          step.classList.add('active');
-        }
-      } else {
-        const rVal = parseInt(rAttr, 10);
-        if (isFinale || rVal < roundNum) {
-          step.classList.add('passed');
-        } else if (rVal === roundNum) {
-          step.classList.add('active');
-        }
-      }
-    });
-  }
 
   // --- SMART ACTION GUIDANCE BANNER ---
   function updateSmartGuidanceBanner() {
