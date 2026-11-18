@@ -53,6 +53,27 @@
     } catch (e) {}
   }
 
+  function soundMyTurn() {
+    if (!soundEnabled || !audioCtx) return;
+    try {
+      // 3-tone melodic intercom chime (C5 -> E5 -> G5)
+      const now = audioCtx.currentTime;
+      const notes = [523.25, 659.25, 783.99];
+      notes.forEach((freq, idx) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.13);
+        gain.gain.setValueAtTime(0.22, now + idx * 0.13);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + idx * 0.13 + 0.38);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start(now + idx * 0.13);
+        osc.stop(now + idx * 0.13 + 0.40);
+      });
+    } catch (e) {}
+  }
+
   // --- APPLICATION STATE ---
   let ws = null;
   let myId = localStorage.getItem('bunker_player_id') || null;
@@ -118,6 +139,30 @@
   const activeSpeakerBar = document.getElementById('activeSpeakerBar');
   const speakerTimerVal = document.getElementById('speakerTimerVal');
   const finishSpeechBtn = document.getElementById('finishSpeechBtn');
+  const speakerStatusText = document.getElementById('speakerStatusText');
+  const catastropheModalBtn = document.getElementById('catastropheModalBtn');
+
+  // Catastrophe Briefing Modal
+  const catastropheBriefingModal = document.getElementById('catastropheBriefingModal');
+  const briefingCatTitle = document.getElementById('briefingCatTitle');
+  const closeBriefingModalBtn = document.getElementById('closeBriefingModalBtn');
+  const briefingCatIcon = document.getElementById('briefingCatIcon');
+  const briefingCatBadge = document.getElementById('briefingCatBadge');
+  const briefingCatName = document.getElementById('briefingCatName');
+  const briefingCatDesc = document.getElementById('briefingCatDesc');
+  const briefingCatTip = document.getElementById('briefingCatTip');
+  const briefingBunkerName = document.getElementById('briefingBunkerName');
+  const briefingBunkerDesc = document.getElementById('briefingBunkerDesc');
+  const briefingThreatName = document.getElementById('briefingThreatName');
+  const briefingThreatDesc = document.getElementById('briefingThreatDesc');
+  const briefingCapacityNum = document.getElementById('briefingCapacityNum');
+  const briefingCountdownBox = document.getElementById('briefingCountdownBox');
+  const briefingTimerNum = document.getElementById('briefingTimerNum');
+  const briefingReadyBtn = document.getElementById('briefingReadyBtn');
+  const briefingSkipHostBtn = document.getElementById('briefingSkipHostBtn');
+
+  let prevActivePlayerId = null;
+  let userDismissedBriefing = false;
   const filterAllBtn = document.getElementById('filterAllBtn');
   const filterAliveBtn = document.getElementById('filterAliveBtn');
   const filterExiledBtn = document.getElementById('filterExiledBtn');
@@ -234,6 +279,44 @@
       el.style.transition = 'opacity 0.4s';
       setTimeout(() => el.remove(), 400);
     }, 4000);
+  }
+
+  // --- TURN ALERT NOTIFICATION & SIGNALS ---
+  let titleFlashTimer = null;
+  const originalDocTitle = 'БУНКЕР 3.3 | Терминал выживания';
+
+  function flashTabTitle(alertText) {
+    if (titleFlashTimer) clearInterval(titleFlashTimer);
+    let isAlert = true;
+    let counter = 0;
+    titleFlashTimer = setInterval(() => {
+      document.title = isAlert ? alertText : originalDocTitle;
+      isAlert = !isAlert;
+      counter++;
+      if (counter > 10) {
+        clearInterval(titleFlashTimer);
+        titleFlashTimer = null;
+        document.title = originalDocTitle;
+      }
+    }, 600);
+  }
+
+  function triggerMyTurnAlert() {
+    soundMyTurn();
+    if (navigator && navigator.vibrate) {
+      try { navigator.vibrate([200, 100, 200, 100, 300]); } catch (e) {}
+    }
+    flashTabTitle('🔴 ВАШ ХОД! | Бункер 3.3');
+    showToast('🎤 <strong>ВАШ ХОД!</strong> Вскройте карту и держите речь перед бункером!');
+
+    // Auto-switch to "Мои Карты" if the player hasn't revealed card yet
+    const me = gameState && gameState.players ? gameState.players.find(p => p.id === gameState.my_id) : null;
+    if (me && !me.is_exiled) {
+      const revCount = Object.values(me.hand).filter(c => c.revealed).length;
+      if (revCount < (gameState.round || 1)) {
+        switchToTab('tabMyDeck');
+      }
+    }
   }
 
   // --- WEBSOCKET CONNECTION & AUTO-RECONNECT ---
@@ -387,6 +470,7 @@
       if (speechTimerNum) speechTimerNum.textContent = sec;
       if (debateCountdownNum) debateCountdownNum.textContent = sec;
       if (speakerTimerVal) speakerTimerVal.textContent = sec;
+      if (briefingTimerNum) briefingTimerNum.textContent = sec;
       if (hostTimerStatus) {
         hostTimerStatus.textContent = msg.paused ? '⏸️ Таймер на паузе' : `⏱️ Осталось: ${sec}с`;
         hostTimerStatus.className = msg.paused ? 'host-timer-status text-danger' : 'host-timer-status text-amber';
@@ -411,12 +495,25 @@
     if (msg.type === 'state_update') {
       if (reconnectBanner) reconnectBanner.classList.add('hidden');
       const prevPhase = gameState ? gameState.phase : null;
+      const prevActiveId = gameState ? gameState.active_player_id : null;
       gameState = msg.state;
       renderApp();
 
-      // Sound alerts on phase shifts
+      // Check if it just became my turn in turns phase
+      if (gameState.phase === 'turns' && gameState.active_player_id === gameState.my_id && prevActiveId !== gameState.my_id) {
+        triggerMyTurnAlert();
+      }
+
+      // Sound alerts and modals on phase shifts
       if (prevPhase !== gameState.phase) {
-        if (gameState.phase === 'voting') {
+        if (gameState.phase === 'briefing') {
+          soundAlarm();
+          userDismissedBriefing = false;
+          renderCatastropheBriefingModal(true);
+        } else if (gameState.phase === 'turns' && gameState.round === 1 && prevPhase === 'briefing') {
+          soundAlarm();
+          showToast('🚀 <strong>Раунд 1 начался!</strong> Выступаем по очереди.');
+        } else if (gameState.phase === 'voting') {
           soundAlarm();
           showToast('🗳️ <strong>Началось тайное голосование!</strong>');
         } else if (gameState.phase === 'vote_results') {
@@ -433,8 +530,12 @@
     myId = null;
     currentRoomCode = null;
     gameState = null;
+    prevActivePlayerId = null;
+    userDismissedBriefing = false;
     if (roomBadge) roomBadge.classList.add('hidden');
     if (leaveRoomNavBtn) leaveRoomNavBtn.classList.add('hidden');
+    if (catastropheModalBtn) catastropheModalBtn.classList.add('hidden');
+    if (catastropheBriefingModal) catastropheBriefingModal.classList.add('hidden');
     showScreen(screenLobby);
   }
 
@@ -467,11 +568,18 @@
       return;
     }
 
-    // Room badge & Exit button in header
+    // Room badge & Exit button & Catastrophe button in header
     if (gameState.room_code) {
       roomBadge.classList.remove('hidden');
       roomCodeDisplay.textContent = gameState.room_code;
       if (leaveRoomNavBtn) leaveRoomNavBtn.classList.remove('hidden');
+      if (catastropheModalBtn) {
+        if (gameState.status !== 'lobby') {
+          catastropheModalBtn.classList.remove('hidden');
+        } else {
+          catastropheModalBtn.classList.add('hidden');
+        }
+      }
     }
 
     // Screen Router
@@ -564,9 +672,11 @@
     // Top HUD
     currentRoundDisplay.textContent = gameState.round;
     const phaseLabels = {
+      briefing: 'ФАЗА: БРИФИНГ КАТАСТРОФЫ',
       turns: 'ФАЗА: ВСКРЫТИЕ КАРТ',
       debate: 'ФАЗА: ОБСУЖДЕНИЕ (ДЕБАТЫ)',
       voting: 'ФАЗА: ТАЙНОЕ ГОЛОСОВАНИЕ',
+      tie_decision: 'ФАЗА: РЕШЕНИЕ НИЧЬЕЙ',
       vote_results: 'ФАЗА: ИТОГИ ИЗГНАНИЯ',
       finale: 'ФАЗА: ФИНАЛ ВЫЖИВАНИЯ'
     };
@@ -655,10 +765,34 @@
       if (isMyTurn) {
         activeSpeakerBar.classList.remove('hidden');
         if (speakerTimerVal) speakerTimerVal.textContent = currentSec;
+
+        const me = gameState.players.find(p => p.id === gameState.my_id);
+        const revCount = me ? Object.values(me.hand).filter(c => c.revealed).length : 0;
+        const hasRevealedThisRound = revCount >= (gameState.round || 1);
+
+        if (!hasRevealedThisRound) {
+          if (speakerStatusText) {
+            speakerStatusText.innerHTML = `⚠️ <strong>ВАШ ХОД: Вскройте карту раунда!</strong> Время: <strong id="speakerTimerVal">${currentSec}</strong>с`;
+          }
+          if (finishSpeechBtn) {
+            finishSpeechBtn.className = 'btn finish-speech-pending';
+            finishSpeechBtn.innerHTML = '👁️ ВСКРОЙТЕ КАРТУ В «МОИ КАРТЫ»';
+          }
+        } else {
+          if (speakerStatusText) {
+            speakerStatusText.innerHTML = `🎤 <strong>ВАША РЕЧЬ!</strong> Держите речь и передайте ход. Время: <strong id="speakerTimerVal">${currentSec}</strong>с`;
+          }
+          if (finishSpeechBtn) {
+            finishSpeechBtn.className = 'btn finish-speech-ready';
+            finishSpeechBtn.innerHTML = '✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД';
+          }
+        }
       } else {
         activeSpeakerBar.classList.add('hidden');
       }
     }
+
+    renderCatastropheBriefingModal();
 
     // Tabs info
     const survivorsCountEl = document.getElementById('tabSurvivorsCount');
@@ -857,6 +991,46 @@
     dossierModal.classList.add('hidden');
   });
 
+  // --- CATEGORY METADATA & ROLES ---
+  const CATEGORY_META = {
+    profession: {
+      name: 'Профессия',
+      icon: '🛠️',
+      role: 'Трудовая польза и ключевые навыки для восстановления цивилизации',
+      tip: 'Объясните, почему бункер не выживет без ваших профессиональных умений.'
+    },
+    biology: {
+      name: 'Биология',
+      icon: '🧬',
+      role: 'Пол, возраст, продолжение рода и физические данные выжившего',
+      tip: 'Докажите, что ваш возраст и физиология оптимальны для выживания и репродукции.'
+    },
+    health: {
+      name: 'Здоровье',
+      icon: '❤️',
+      role: 'Физическое и психическое здоровье, иммунитет или скрытые недуги',
+      tip: 'Покажите, что ваше здоровье не станет обузой для скудных запасов бункера.'
+    },
+    hobby: {
+      name: 'Хобби',
+      icon: '🎨',
+      role: 'Прикладные увлечения, ремёсла, хобби и скрытые таланты',
+      tip: 'Покажите, как ваше хобби может стать практическим спасением (ремонт, охота, дистилляция).'
+    },
+    luggage: {
+      name: 'Багаж',
+      icon: '🎒',
+      role: 'Личное снаряжение, инструменты и ценные ресурсы в вашем рюкзаке',
+      tip: 'Расскажите, как ваш предмет решит одну из критических проблем в бункере.'
+    },
+    fact: {
+      name: 'Факт',
+      icon: '📜',
+      role: 'Уникальный жизненный опыт, черта характера или тайна прошлого',
+      tip: 'Используйте свой уникальный опыт, чтобы расположить к себе совет убежища.'
+    }
+  };
+
   // --- TAB 2: MY DECK (SECRET CARDS) ---
   function renderMyDeck() {
     const me = gameState.players.find(p => p.id === gameState.my_id);
@@ -865,12 +1039,24 @@
     const isMyTurn = (gameState.active_player_id === gameState.my_id && gameState.phase === 'turns');
     const myDeckNotice = document.getElementById('myDeckNotice');
 
+    const revCount = Object.values(me.hand).filter(c => c.revealed).length;
+    const hasRevealedThisRound = revCount >= (gameState.round || 1);
+
     if (isMyTurn) {
       myTurnAlert.classList.remove('hidden');
-      myDeckNotice.classList.remove('hidden');
+      if (myDeckNotice) {
+        myDeckNotice.classList.remove('hidden');
+        if (!hasRevealedThisRound) {
+          myDeckNotice.innerHTML = gameState.round === 1
+            ? '💡 <strong>Раунд 1:</strong> Вскройте карту <strong>Профессия</strong> ниже и объясните, чем вы полезны бункеру!'
+            : `💡 <strong>Раунд ${gameState.round}:</strong> Выберите и вскройте наиболее выгодную для вас характеристику!`;
+        } else {
+          myDeckNotice.innerHTML = '🎤 <strong>Карта вскрыта!</strong> Держите речь перед бункером. Когда выскажетесь, нажмите <strong>«Завершить речь»</strong> наверху экрана.';
+        }
+      }
     } else {
       myTurnAlert.classList.add('hidden');
-      myDeckNotice.classList.add('hidden');
+      if (myDeckNotice) myDeckNotice.classList.add('hidden');
     }
 
     myCardsGrid.innerHTML = '';
@@ -884,8 +1070,10 @@
       cardEl.className = 'game-card ' + (card.revealed ? 'revealed' : 'secret');
 
       const isR1 = (gameState.round === 1);
-      const isEligibleToReveal = isMyTurn && !card.revealed && (!me.is_exiled) && (!isR1 || cat === 'profession');
-      const isRecommended = isMyTurn && isR1 && cat === 'profession' && !card.revealed;
+      const isEligibleToReveal = isMyTurn && !hasRevealedThisRound && !card.revealed && (!me.is_exiled) && (!isR1 || cat === 'profession');
+      const isRecommended = isMyTurn && !hasRevealedThisRound && isR1 && cat === 'profession' && !card.revealed;
+
+      const meta = CATEGORY_META[cat] || { name: translateCategory(cat), icon: '📋', role: 'Характеристика выжившего', tip: '' };
 
       if (isRecommended) {
         cardEl.classList.add('card-recommended-turn');
@@ -898,20 +1086,34 @@
 
       let lockHint = '';
       if (isR1 && cat !== 'profession' && !card.revealed) {
-        lockHint = '<div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 6px;">🔒 Откроется со 2-го раунда</div>';
+        lockHint = '<div class="card-lock-hint">🔒 Доступно для вскрытия со 2-го раунда</div>';
+      } else if (isMyTurn && hasRevealedThisRound && !card.revealed) {
+        lockHint = '<div class="card-lock-hint">🔒 Лимит на этот раунд исчерпан (1 карта в раунд)</div>';
       }
+
+      let revealedSpeechHint = '';
+      if (card.revealed && isMyTurn && hasRevealedThisRound) {
+        revealedSpeechHint = '<div class="card-revealed-hint">✅ Вскрыто! Выступайте с речью. Нажмите «Завершить речь», когда закончите.</div>';
+      }
+
+      const badgeHtml = card.badge ? `<span class="card-badge-pill">${escapeHtml(card.badge)}</span>` : '';
+      const tipHtml = meta.tip ? `<div class="card-speech-tip"><strong>💡 КАК ЗАЩИТИТЬ КАРТУ:</strong> ${meta.tip}</div>` : '';
 
       cardEl.innerHTML = `
         <div class="card-top">
-          <span class="card-category-tag">${translateCategory(cat)}</span>
+          <span class="card-category-tag">${meta.icon} ${meta.name}</span>
           <span class="card-status-badge ${card.revealed ? 'open' : 'locked'}">
             ${card.revealed ? '👁️ Открыта всем' : '🔒 Только для вас'}
           </span>
         </div>
+        ${badgeHtml}
+        <div class="card-role-desc">${meta.role}</div>
         <div class="card-title">${escapeHtml(card.name)} ${card.icon || ''}</div>
         <div class="card-desc">${escapeHtml(card.desc || '')}</div>
         ${card.quote ? `<div class="card-quote">${escapeHtml(card.quote)}</div>` : ''}
+        ${tipHtml}
         ${lockHint}
+        ${revealedSpeechHint}
         ${isEligibleToReveal ? `<button class="reveal-btn" data-cat="${cat}">${btnLabel}</button>` : ''}
       `;
 
@@ -1432,8 +1634,114 @@
   if (finishSpeechBtn) {
     finishSpeechBtn.addEventListener('click', () => {
       initAudio();
+      const me = gameState && gameState.players ? gameState.players.find(p => p.id === gameState.my_id) : null;
+      if (me) {
+        const revCount = Object.values(me.hand).filter(c => c.revealed).length;
+        if (revCount < (gameState.round || 1)) {
+          showToast('⚠️ <strong>Сначала вскройте карту раунда!</strong> Перейдите во вкладку «Мои карты».');
+          switchToTab('tabMyDeck');
+          return;
+        }
+      }
       soundClick();
       ws.send(jsonStr({ action: 'finish_speech' }));
+    });
+  }
+
+  // --- CATASTROPHE BRIEFING MODAL ---
+  function renderCatastropheBriefingModal(forceOpen = false) {
+    if (!catastropheBriefingModal || !gameState || !gameState.catastrophe) return;
+
+    const c = gameState.catastrophe;
+    if (briefingCatTitle) briefingCatTitle.textContent = c.name;
+    if (briefingCatIcon) briefingCatIcon.textContent = c.icon || '🌋';
+    if (briefingCatBadge) briefingCatBadge.textContent = c.badge || 'ГЛОБАЛЬНЫЙ КАТАКЛИЗМ';
+    if (briefingCatName) briefingCatName.textContent = c.name;
+    if (briefingCatDesc) briefingCatDesc.textContent = c.desc || '';
+    if (briefingCatTip) briefingCatTip.textContent = c.survive_tip || 'Нужна слаженная работа и полезные навыки.';
+
+    const pairs = gameState.bunker_threat_pairs || [];
+    const p1 = pairs[0];
+    if (p1) {
+      if (briefingBunkerName) briefingBunkerName.textContent = p1.bunker ? p1.bunker.name : 'Склад припасов';
+      if (briefingBunkerDesc) briefingBunkerDesc.textContent = p1.bunker ? p1.bunker.desc : '';
+      if (briefingThreatName) briefingThreatName.textContent = p1.threat ? p1.threat.name : 'Прорыв шлюза';
+      if (briefingThreatDesc) briefingThreatDesc.textContent = p1.threat ? (p1.threat.needed || p1.threat.desc) : '';
+    }
+
+    const cap = gameState.bunker_capacity || Math.max(1, Math.floor((gameState.total_players || gameState.players.length) / 2));
+    if (briefingCapacityNum) briefingCapacityNum.textContent = `${cap} из ${gameState.total_players || gameState.players.length}`;
+
+    const currentSec = gameState.timer_seconds || 0;
+    if (briefingTimerNum) briefingTimerNum.textContent = currentSec;
+
+    const isHost = (gameState.host_id === gameState.my_id);
+    if (briefingSkipHostBtn) {
+      if (isHost && gameState.phase === 'briefing') {
+        briefingSkipHostBtn.classList.remove('hidden');
+      } else {
+        briefingSkipHostBtn.classList.add('hidden');
+      }
+    }
+
+    if (gameState.phase === 'briefing') {
+      if (!userDismissedBriefing || forceOpen) {
+        catastropheBriefingModal.classList.remove('hidden');
+      }
+    } else if (forceOpen) {
+      catastropheBriefingModal.classList.remove('hidden');
+    } else {
+      if (catastropheBriefingModal.dataset.manuallyOpened !== 'true') {
+        catastropheBriefingModal.classList.add('hidden');
+      }
+    }
+  }
+
+  if (catastropheModalBtn) {
+    catastropheModalBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      if (catastropheBriefingModal) {
+        catastropheBriefingModal.dataset.manuallyOpened = 'true';
+        renderCatastropheBriefingModal(true);
+      }
+    });
+  }
+
+  if (closeBriefingModalBtn) {
+    closeBriefingModalBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      if (catastropheBriefingModal) {
+        catastropheBriefingModal.classList.add('hidden');
+        catastropheBriefingModal.dataset.manuallyOpened = 'false';
+      }
+      userDismissedBriefing = true;
+    });
+  }
+
+  if (briefingReadyBtn) {
+    briefingReadyBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      if (catastropheBriefingModal) {
+        catastropheBriefingModal.classList.add('hidden');
+        catastropheBriefingModal.dataset.manuallyOpened = 'false';
+      }
+      userDismissedBriefing = true;
+      showToast('👍 <strong>Вы готовы к отбору!</strong> Ожидаем начала 1-го раунда.');
+    });
+  }
+
+  if (briefingSkipHostBtn) {
+    briefingSkipHostBtn.addEventListener('click', () => {
+      initAudio();
+      soundAlarm();
+      if (catastropheBriefingModal) {
+        catastropheBriefingModal.classList.add('hidden');
+        catastropheBriefingModal.dataset.manuallyOpened = 'false';
+      }
+      ws.send(jsonStr({ action: 'skip_briefing' }));
     });
   }
 
@@ -1466,10 +1774,12 @@
   document.getElementById('viewCatastropheBtn').addEventListener('click', () => {
     initAudio();
     soundClick();
-    tabButtons.forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-    document.querySelector('[data-tab="tabBunker"]').classList.add('active');
-    tabBunker.classList.add('active');
+    if (catastropheBriefingModal) {
+      catastropheBriefingModal.dataset.manuallyOpened = 'true';
+      renderCatastropheBriefingModal(true);
+    } else {
+      switchToTab('tabBunker');
+    }
   });
 
   // --- VISUAL ROUND ROADMAP ---
@@ -1509,6 +1819,26 @@
     smartGuidanceBanner.classList.remove('my-turn-highlight');
     if (guidanceActionBtn) guidanceActionBtn.classList.add('hidden');
 
+    if (gameState.phase === 'briefing') {
+      smartGuidanceBanner.classList.add('my-turn-highlight');
+      if (guidanceIcon) guidanceIcon.textContent = '🚨';
+      if (guidanceTitle) guidanceTitle.textContent = `ЭКСТРЕННЫЙ БРИФИНГ: «${(gameState.catastrophe && gameState.catastrophe.name) || 'КАТАСТРОФА'}»`;
+      if (guidanceDesc) guidanceDesc.textContent = 'Ознакомьтесь с условиями катастрофы и угрозами перед началом отбора.';
+      if (guidanceActionBtn) {
+        guidanceActionBtn.classList.remove('hidden');
+        guidanceActionBtn.textContent = '📖 Открыть брифинг';
+        guidanceActionBtn.onclick = () => {
+          initAudio();
+          soundClick();
+          if (catastropheBriefingModal) {
+            catastropheBriefingModal.dataset.manuallyOpened = 'true';
+            renderCatastropheBriefingModal(true);
+          }
+        };
+      }
+      return;
+    }
+
     if (gameState.status === 'finale') {
       if (guidanceIcon) guidanceIcon.textContent = '🏆';
       if (guidanceTitle) guidanceTitle.textContent = 'ФИНАЛ: ВХОД В БУНКЕР';
@@ -1520,22 +1850,43 @@
       if (isMyTurn) {
         smartGuidanceBanner.classList.add('my-turn-highlight');
         if (guidanceIcon) guidanceIcon.textContent = '🎤';
-        if (guidanceTitle) guidanceTitle.textContent = '🚨 СЕЙЧАС ВАШ ХОД! ОТКРОЙТЕ КАРТУ';
-        if (guidanceDesc) {
-          if (gameState.round === 1) {
-            guidanceDesc.textContent = 'В 1-м раунде все вскрывают Профессию. Докажите, почему ваша специальность спасёт команду!';
-          } else {
-            guidanceDesc.textContent = `Раунд ${gameState.round}: выберите и вскройте одну из закрытых характеристик.`;
+
+        const me = (gameState.players || []).find(p => p.id === gameState.my_id);
+        const revCount = me ? Object.values(me.hand).filter(c => c.revealed).length : 0;
+        const hasRevealedThisRound = revCount >= (gameState.round || 1);
+
+        if (!hasRevealedThisRound) {
+          if (guidanceTitle) guidanceTitle.textContent = '🚨 СЕЙЧАС ВАШ ХОД! ВСКРОЙТЕ КАРТУ';
+          if (guidanceDesc) {
+            if (gameState.round === 1) {
+              guidanceDesc.textContent = 'В 1-м раунде все вскрывают Профессию. Докажите, почему ваша специальность спасёт команду!';
+            } else {
+              guidanceDesc.textContent = `Раунд ${gameState.round}: выберите и вскройте одну из закрытых характеристик.`;
+            }
           }
-        }
-        if (guidanceActionBtn) {
-          guidanceActionBtn.classList.remove('hidden');
-          guidanceActionBtn.textContent = '👉 Мои карты (Вскрыть)';
-          guidanceActionBtn.onclick = () => {
-            initAudio();
-            soundClick();
-            switchToTab('tabMyDeck');
-          };
+          if (guidanceActionBtn) {
+            guidanceActionBtn.classList.remove('hidden');
+            guidanceActionBtn.textContent = '👉 Мои карты (Вскрыть)';
+            guidanceActionBtn.onclick = () => {
+              initAudio();
+              soundClick();
+              switchToTab('tabMyDeck');
+            };
+          }
+        } else {
+          if (guidanceTitle) guidanceTitle.textContent = '🎤 ВАША РЕЧЬ! ВЫСКАЖИТЕСЬ ПЕРЕД БУНКЕРОМ';
+          if (guidanceDesc) {
+            guidanceDesc.textContent = 'Карта вскрыта! Объясните пользу своей характеристики. Когда закончите, нажмите «Завершить речь».';
+          }
+          if (guidanceActionBtn) {
+            guidanceActionBtn.classList.remove('hidden');
+            guidanceActionBtn.textContent = '✅ Завершить речь';
+            guidanceActionBtn.onclick = () => {
+              initAudio();
+              soundClick();
+              ws.send(jsonStr({ action: 'finish_speech' }));
+            };
+          }
         }
       } else {
         if (guidanceIcon) guidanceIcon.textContent = '🎧';

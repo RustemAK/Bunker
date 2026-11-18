@@ -2080,4 +2080,127 @@ input[type="text"]:focus {
   color: #fff;
 }
 
+/* ================= TURN SPEECH & ACTIVE SPEAKER CONTROLS ================= */
+.finish-speech-ready {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+  border-color: #34d399 !important;
+  color: #fff !important;
+  font-weight: 700 !important;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.5) !important;
+  animation: readyPulse 1.6s infinite ease-in-out !important;
+  cursor: pointer;
+}
+
+@keyframes readyPulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 14px rgba(16, 185, 129, 0.4);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 24px rgba(16, 185, 129, 0.75);
+  }
+}
+
+.finish-speech-pending {
+  background: rgba(245, 158, 11, 0.15) !important;
+  border: 1px dashed var(--color-amber) !important;
+  color: var(--color-amber-light) !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+}
+
+.finish-speech-pending:hover {
+  background: rgba(245, 158, 11, 0.25) !important;
+}
+
+@media (max-width: 600px) {
+  .active-speaker-bar {
+    flex-direction: column;
+    align-items: stretch;
+    text-align: center;
+    gap: 10px;
+  }
+  .speaker-status-box {
+    justify-content: center;
+  }
+}
+
+/* ================= CARD CLARITY & GUIDANCE BADGES ================= */
+.card-badge-pill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--color-amber);
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  align-self: flex-start;
+}
+
+.card-role-desc {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+  line-height: 1.3;
+}
+
+.card-speech-tip {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-sm);
+  border-left: 3px solid var(--color-cyan);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.card-speech-tip strong {
+  color: var(--color-cyan);
+  font-size: 0.72rem;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.card-lock-hint {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.card-revealed-hint {
+  font-size: 0.8rem;
+  color: var(--color-emerald-light);
+  margin-top: 8px;
+  padding: 6px 8px;
+  background: rgba(16, 185, 129, 0.1);
+  border-radius: 4px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.card-recommended-turn {
+  border: 2px solid var(--color-amber) !important;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.4) !important;
+  animation: cardTurnGlow 2s infinite ease-in-out;
+}
+
+@keyframes cardTurnGlow {
+  0%, 100% { box-shadow: 0 0 15px rgba(245, 158, 11, 0.35); }
+  50% { box-shadow: 0 0 28px rgba(245, 158, 11, 0.65); }
+}
+
+/* ================= CATASTROPHE BRIEFING MODAL ================= */
+.cat-brief-card {
+  position: relative;
+  overflow: hidden;
+}
+
+
 

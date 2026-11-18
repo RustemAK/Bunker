@@ -29,6 +29,7 @@
       <div id="roomBadge" class="room-badge hidden">
         КОМНАТА: <span id="roomCodeDisplay">----</span>
       </div>
+      <button id="catastropheModalBtn" class="btn-subtle hidden" title="Подробнее о катастрофе">ℹ️ Катастрофа</button>
       <button id="rulesHelpBtn" class="btn-subtle" title="Как играть?">❓ Правила</button>
       <button id="leaveRoomNavBtn" class="btn-subtle text-danger hidden" title="Выйти из комнаты">🚪 Выйти</button>
       <button id="soundToggleBtn" class="icon-btn" title="Звуки терминала">🔊</button>
@@ -259,6 +260,17 @@
         </div>
       </div>
 
+      <!-- ACTIVE SPEAKER BAR (VISUAL CONTROLS FOR CURRENT SPEAKER ACROSS ALL TABS) -->
+      <div id="activeSpeakerBar" class="active-speaker-bar hidden">
+        <div class="speaker-status-box">
+          <span class="speaker-pulse">🔴</span>
+          <span id="speakerStatusText">ИДЁТ ВАША РЕЧЬ! Время на выступление: <strong id="speakerTimerVal">--</strong>с</span>
+        </div>
+        <button id="finishSpeechBtn" class="btn btn-warning">
+          ✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД
+        </button>
+      </div>
+
       <!-- MAIN TABS: 1. Выжившие (Досье всех) | 2. Мои Карты | 3. Бункер и Угрозы -->
       <nav class="game-tabs">
 
@@ -275,16 +287,6 @@
 
       <!-- TAB 1: ALL SURVIVORS (GRID + TAP TO VIEW DOSSIER) -->
       <div id="tabSurvivors" class="tab-content active">
-        <!-- Active Speaker Bar (Finish Speech) -->
-        <div id="activeSpeakerBar" class="active-speaker-bar hidden">
-          <div class="speaker-status-box">
-            <span class="speaker-pulse">🔴</span>
-            <span>ИДЁТ ВАША РЕЧЬ! Время на выступление: <strong id="speakerTimerVal">--</strong>с</span>
-          </div>
-          <button id="finishSpeechBtn" class="btn btn-warning">
-            ✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД
-          </button>
-        </div>
 
         <!-- Survivors Filter Bar -->
         <div class="survivors-filter-bar">
@@ -648,6 +650,75 @@
       <div class="modal-footer">
         <button id="closeRulesModalConfirmBtn" class="btn btn-primary btn-block">
           ПОНЯТНО, В БОЙ! 🚀
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 7: CATASTROPHE BRIEFING MODAL (АВАРИЙНЫЙ БРИФИНГ КАТАСТРОФЫ) -->
+  <div id="catastropheBriefingModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-danger); color: var(--color-danger-light);">
+            🚨 ЭКСТРЕННЫЙ БРИФИНГ КАТАСТРОФЫ
+          </div>
+          <h2 id="briefingCatTitle" style="color: #fff; margin-top: 6px;">Загрузка катастрофы...</h2>
+        </div>
+        <button id="closeBriefingModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+
+      <div class="briefing-modal-body" style="display: flex; flex-direction: column; gap: 14px; margin: 16px 0;">
+        <!-- Catastrophe detail card -->
+        <div class="cat-brief-card glass-panel" style="padding: 16px; border-left: 4px solid var(--color-danger);">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span id="briefingCatIcon" style="font-size: 2.2rem;">🌋</span>
+            <div>
+              <span id="briefingCatBadge" class="hazard-badge" style="font-size: 0.75rem;">ГЛОБАЛЬНЫЙ КАТАКЛИЗМ</span>
+              <h3 id="briefingCatName" style="color: #fff; font-size: 1.2rem;">Название</h3>
+            </div>
+          </div>
+          <p id="briefingCatDesc" style="color: var(--text-main); font-size: 0.95rem; line-height: 1.45;">
+            Описание катастрофы...
+          </p>
+          <div style="margin-top: 10px; padding: 10px; background: rgba(245, 158, 11, 0.12); border-radius: var(--radius-sm); border-left: 3px solid var(--color-amber);">
+            <strong style="color: var(--color-amber); font-size: 0.85rem;">💡 СОВЕТ ПО ВЫЖИВАНИЮ:</strong>
+            <p id="briefingCatTip" style="font-size: 0.85rem; color: #fff; margin-top: 2px;">Какие навыки нужны...</p>
+          </div>
+        </div>
+
+        <!-- Initial Bunker and Threat slots -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="glass-panel" style="padding: 12px; border-left: 3px solid var(--color-cyan);">
+            <div style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 700;">📦 ОТСЕК БУНКЕРА (РАУНД 1)</div>
+            <strong id="briefingBunkerName" style="display: block; color: #fff; font-size: 0.9rem; margin-top: 4px;">Склад припасов</strong>
+            <small id="briefingBunkerDesc" style="color: var(--text-muted); font-size: 0.75rem;">Описание отсека...</small>
+          </div>
+          <div class="glass-panel" style="padding: 12px; border-left: 3px solid var(--color-danger);">
+            <div style="font-size: 0.75rem; color: var(--color-danger); font-weight: 700;">⚠️ УГРОЗА БУНКЕРА (РАУНД 1)</div>
+            <strong id="briefingThreatName" style="display: block; color: #fff; font-size: 0.9rem; margin-top: 4px;">Прорыв шлюза</strong>
+            <small id="briefingThreatDesc" style="color: var(--text-muted); font-size: 0.75rem;">Описание угрозы...</small>
+          </div>
+        </div>
+
+        <!-- Key Rule Notice -->
+        <div class="glass-panel" style="padding: 12px 14px; background: rgba(16, 185, 129, 0.1); border-left: 3px solid var(--color-emerald);">
+          <div style="font-size: 0.85rem; color: #fff;">
+            🛡️ <strong>Вместимость бункера:</strong> спастись смогут ровно <strong id="briefingCapacityNum" class="text-amber">--</strong> человек.<br>
+            🎤 <strong>Раунд 1 — Знакомство:</strong> каждый игрок по очереди вскроет Профессию и докажет свою ценность. <em>В 1-м раунде никто не изгоняется!</em>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="briefingCountdownBox" style="text-align: center; color: var(--color-amber); font-family: var(--font-mono); font-size: 0.9rem;">
+          ⏱️ До начала Раунда 1: <strong id="briefingTimerNum">25</strong>с
+        </div>
+        <button id="briefingReadyBtn" class="btn btn-primary btn-block">
+          ✅ Я ОЗНАКОМИЛСЯ, ГОТОВ К ОТБОРУ
+        </button>
+        <button id="briefingSkipHostBtn" class="btn btn-danger btn-block hidden">
+          🚀 НАЧАТЬ РАУНД 1 ПРЯМО СЕЙЧАС (ХОСТ)
         </button>
       </div>
     </div>

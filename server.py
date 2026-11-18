@@ -162,7 +162,33 @@ class Room:
                     self.timer_seconds -= 1
                     await broadcast_timer_tick(self)
 
-            if auto_phase_on_zero == "voting" and self.phase == "debate":
+            if auto_phase_on_zero == "start_round_1" and self.phase == "briefing":
+                self.phase = "turns"
+                active_p = self.players[self.get_active_player_id()]
+                self.add_log(f"🎤 Брифинг окончен! Раунд 1: первым выступает {active_p.name} — вскройте Профессию!")
+                self.start_timer(getattr(self, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
+                await broadcast_room(self)
+
+            elif auto_phase_on_zero == "next_turn" and self.phase == "turns":
+                curr_pid = self.get_active_player_id()
+                if curr_pid and curr_pid in self.players:
+                    p = self.players[curr_pid]
+                    curr_target = self.round
+                    rev_count = sum(1 for c in p.hand.values() if c.get("revealed", False))
+                    if rev_count < curr_target:
+                        if self.round == 1 and not p.hand.get("profession", {}).get("revealed", False):
+                            p.hand["profession"]["revealed"] = True
+                            self.add_log(f"⏰ Время вышло! У игрока {p.name} автоматически вскрыта Профессия: «{p.hand['profession']['name']}»")
+                        else:
+                            unrev = [c for c in p.hand.values() if not c.get("revealed", False)]
+                            if unrev:
+                                unrev[0]["revealed"] = True
+                                self.add_log(f"⏰ Время вышло! У игрока {p.name} автоматически вскрыта карта: «{unrev[0]['name']}»")
+                    self.add_log(f"⏱️ Время на речь игрока {p.name} истекло. Переход хода!")
+                next_player_turn(self)
+                await broadcast_room(self)
+
+            elif auto_phase_on_zero in ("voting", "round_advance") and self.phase == "debate":
                 if self.has_voting_in_round(self.round):
                     self.phase = "voting"
                     for p in self.players.values():
@@ -379,11 +405,12 @@ def init_game(room):
         p.special_condition = {**spc_deck[i], "played": False}
 
     bunker_capacity = room.get_bunker_capacity()
+    room.phase = "briefing"
     room.add_log(f"🚨 ТРЕВОГА! Началась катастрофа: «{room.catastrophe['name']}»")
     room.add_log(f"🛡️ Вместимость бункера: {bunker_capacity} из {len(p_keys)} выживших (половина участников).")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
-    room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию! (В 1-м раунде изгнания нет)")
-    room.start_timer(getattr(room, "speech_timer_duration", 35))
+    room.add_log("📖 Брифинг катастрофы: ознакомьтесь с условиями выживания перед началом отбора!")
+    room.start_timer(25, auto_phase_on_zero="start_round_1")
 
 def next_player_turn(room):
     non_exiled = [pid for pid in room.turn_order if not room.players[pid].is_exiled]
@@ -420,7 +447,7 @@ def next_player_turn(room):
                 break
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"👉 Ход переходит к: {active_p.name}. Выберите карту для вскрытия!")
-        room.start_timer(getattr(room, "speech_timer_duration", 35))
+        room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
 
 
 def resolve_voting(room):
@@ -587,7 +614,7 @@ def advance_round(room):
 
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
-        room.start_timer(getattr(room, "speech_timer_duration", 35))
+        room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
 
 def procedural_ai_analysis(cat, survivors, exiled, revealed_bunkers, revealed_threats):
 
@@ -991,9 +1018,21 @@ async def ws_handler(websocket):
                 card["revealed"] = True
                 room.timer_seconds = getattr(room, "speech_timer_duration", 35)
                 room.add_log(f"👁️ {player.name} вскрыл {card.get('badge', category)}: «{card['name']}» {card.get('icon','')}")
+                room.add_log(f"🎤 {player.name} держит речь. Выскажитесь и нажмите «Завершить речь», чтобы передать ход!")
+                await broadcast_timer_tick(room)
+                await broadcast_room(room)
 
-                # Automatically or manually progress turn
-                next_player_turn(room)
+            elif msg_type in ("skip_briefing", "start_round_1"):
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "briefing":
+                    continue
+                room.stop_timer()
+                room.phase = "turns"
+                active_p = room.players[room.get_active_player_id()]
+                room.add_log(f"🎤 Командир завершил брифинг. Раунд 1: первым выступает {active_p.name} — вскройте Профессию!")
+                room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
                 await broadcast_room(room)
 
             elif msg_type in ("start_voting", "skip_debate"):
@@ -1056,6 +1095,14 @@ async def ws_handler(websocket):
                 if current_player_id != room.get_active_player_id():
                     continue
                 active_p = room.players.get(current_player_id)
+                rev_count = sum(1 for c in active_p.hand.values() if c.get("revealed", False))
+                if rev_count < room.round:
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "message": "Сначала вскройте карту раунда, чтобы подтвердить выбор перед бункером!"
+                    }, ensure_ascii=False))
+                    continue
+
                 p_name = active_p.name if active_p else "Игрок"
                 room.add_log(f"🎤 {p_name} досрочно завершил свою речь и передал ход.")
                 next_player_turn(room)
