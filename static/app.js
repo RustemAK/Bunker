@@ -136,6 +136,11 @@
   const reconnectBanner = document.getElementById('reconnectBanner');
   const tempoControlBox = document.getElementById('tempoControlBox');
   const tempoBtnGroup = document.getElementById('tempoBtnGroup');
+  const botControlBox = document.getElementById('botControlBox');
+  const addOneBotBtn = document.getElementById('addOneBotBtn');
+  const fillBots6Btn = document.getElementById('fillBots6Btn');
+  const fillBots8Btn = document.getElementById('fillBots8Btn');
+  const removeBotBtn = document.getElementById('removeBotBtn');
   const activeSpeakerBar = document.getElementById('activeSpeakerBar');
   const speakerTimerVal = document.getElementById('speakerTimerVal');
   const finishSpeechBtn = document.getElementById('finishSpeechBtn');
@@ -620,11 +625,15 @@
         kickBtnHtml = `<button class="kick-player-btn" title="Исключить из лобби">✕ Исключить</button>`;
       }
 
+      let roleText = 'Выживший';
+      if (p.is_host) roleText = '👑 Создатель бункера';
+      else if (p.is_bot) roleText = '🤖 Тестовый бот';
+
       card.innerHTML = `
         <span class="p-avatar">${p.avatar}</span>
         <div style="flex-grow: 1;">
           <div class="p-name">${escapeHtml(p.name)} ${isMe ? '(Вы)' : ''}</div>
-          <div class="p-role">${p.is_host ? '👑 Создатель бункера' : 'Выживший'}</div>
+          <div class="p-role">${roleText}</div>
         </div>
         ${kickBtnHtml}
       `;
@@ -655,6 +664,14 @@
         });
       } else {
         tempoControlBox.classList.add('hidden');
+      }
+    }
+
+    if (botControlBox) {
+      if (isHost) {
+        botControlBox.classList.remove('hidden');
+      } else {
+        botControlBox.classList.add('hidden');
       }
     }
 
@@ -1754,6 +1771,39 @@
       soundClick();
       const sec = parseInt(btn.dataset.sec);
       ws.send(jsonStr({ action: 'set_timer_duration', seconds: sec }));
+    });
+  }
+
+  // --- BOT CONTROLS IN LOBBY (FOR TESTING & SOLO PLAY) ---
+  if (addOneBotBtn) {
+    addOneBotBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'add_bot' }));
+    });
+  }
+
+  if (fillBots6Btn) {
+    fillBots6Btn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'fill_bots', target: 6 }));
+    });
+  }
+
+  if (fillBots8Btn) {
+    fillBots8Btn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'fill_bots', target: 8 }));
+    });
+  }
+
+  if (removeBotBtn) {
+    removeBotBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'remove_bot' }));
     });
   }
 
