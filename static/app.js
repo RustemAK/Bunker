@@ -166,6 +166,20 @@
   const briefingReadyBtn = document.getElementById('briefingReadyBtn');
   const briefingSkipHostBtn = document.getElementById('briefingSkipHostBtn');
 
+  // Round Bunker Briefing Modal (Modal 8)
+  const roundBunkerBriefingModal = document.getElementById('roundBunkerBriefingModal');
+  const roundBriefTitle = document.getElementById('roundBriefTitle');
+  const roundBriefBunkerName = document.getElementById('roundBriefBunkerName');
+  const roundBriefBunkerDesc = document.getElementById('roundBriefBunkerDesc');
+  const roundBriefThreatName = document.getElementById('roundBriefThreatName');
+  const roundBriefThreatDesc = document.getElementById('roundBriefThreatDesc');
+  const roundBriefTimerNum = document.getElementById('roundBriefTimerNum');
+  const roundBriefReadyBtn = document.getElementById('roundBriefReadyBtn');
+  const roundBriefSkipHostBtn = document.getElementById('roundBriefSkipHostBtn');
+  const closeRoundBriefModalBtn = document.getElementById('closeRoundBriefModalBtn');
+  let userDismissedRoundBriefing = false;
+  let lastBriefedRound = null;
+
   let prevActivePlayerId = null;
   let userDismissedBriefing = false;
   const filterAllBtn = document.getElementById('filterAllBtn');
@@ -690,6 +704,7 @@
     currentRoundDisplay.textContent = gameState.round;
     const phaseLabels = {
       briefing: 'ФАЗА: БРИФИНГ КАТАСТРОФЫ',
+      bunker_round_briefing: 'ФАЗА: УСЛОВИЯ БУНКЕРА',
       turns: 'ФАЗА: ВСКРЫТИЕ КАРТ',
       debate: 'ФАЗА: ОБСУЖДЕНИЕ (ДЕБАТЫ)',
       voting: 'ФАЗА: ТАЙНОЕ ГОЛОСОВАНИЕ',
@@ -789,18 +804,20 @@
 
         if (!hasRevealedThisRound) {
           if (speakerStatusText) {
-            speakerStatusText.innerHTML = `⚠️ <strong>ВАШ ХОД: Вскройте карту раунда!</strong> Время: <strong id="speakerTimerVal">${currentSec}</strong>с`;
+            speakerStatusText.innerHTML = (gameState.round === 1)
+              ? '👉 Вскройте карту <strong>«Профессия»</strong> во вкладке «Мои карты» и держите речь!'
+              : `👉 <strong>Раунд ${gameState.round}:</strong> Вскройте <strong>любую карту</strong> во вкладке «Мои карты» и держите речь!`;
           }
           if (finishSpeechBtn) {
-            finishSpeechBtn.className = 'btn finish-speech-pending';
-            finishSpeechBtn.innerHTML = '👁️ ВСКРОЙТЕ КАРТУ В «МОИ КАРТЫ»';
+            finishSpeechBtn.className = 'btn finish-speech-btn finish-speech-pending';
+            finishSpeechBtn.innerHTML = '👁️ СНАЧАЛА ВСКРОЙТЕ КАРТУ В РАУНДЕ';
           }
         } else {
           if (speakerStatusText) {
-            speakerStatusText.innerHTML = `🎤 <strong>ВАША РЕЧЬ!</strong> Держите речь и передайте ход. Время: <strong id="speakerTimerVal">${currentSec}</strong>с`;
+            speakerStatusText.innerHTML = '🎤 <strong>Карта вскрыта! Выступайте с речью.</strong> Когда выскажетесь, нажмите кнопку ниже:';
           }
           if (finishSpeechBtn) {
-            finishSpeechBtn.className = 'btn finish-speech-ready';
+            finishSpeechBtn.className = 'btn btn-warning finish-speech-btn finish-speech-ready';
             finishSpeechBtn.innerHTML = '✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД';
           }
         }
@@ -810,6 +827,7 @@
     }
 
     renderCatastropheBriefingModal();
+    renderRoundBunkerBriefingModal();
 
     // Tabs info
     const survivorsCountEl = document.getElementById('tabSurvivorsCount');
@@ -1066,7 +1084,7 @@
         if (!hasRevealedThisRound) {
           myDeckNotice.innerHTML = gameState.round === 1
             ? '💡 <strong>Раунд 1:</strong> Вскройте карту <strong>Профессия</strong> ниже и объясните, чем вы полезны бункеру!'
-            : `💡 <strong>Раунд ${gameState.round}:</strong> Выберите и вскройте наиболее выгодную для вас характеристику!`;
+            : `🎲 <strong>Раунд ${gameState.round}: Вы свободны в выборе!</strong> Вскройте <strong>любую закрытую характеристику</strong>, которую считаете наиболее сильной для своей защиты.`;
         } else {
           myDeckNotice.innerHTML = '🎤 <strong>Карта вскрыта!</strong> Держите речь перед бункером. Когда выскажетесь, нажмите <strong>«Завершить речь»</strong> наверху экрана.';
         }
@@ -1092,11 +1110,11 @@
 
       const meta = CATEGORY_META[cat] || { name: translateCategory(cat), icon: '📋', role: 'Характеристика выжившего', tip: '' };
 
-      if (isRecommended) {
+      if (isRecommended || (isMyTurn && !hasRevealedThisRound && !isR1 && !card.revealed)) {
         cardEl.classList.add('card-recommended-turn');
       }
 
-      let btnLabel = '👁️ ВСКРЫТЬ КАРТУ ВСЕМ';
+      let btnLabel = `👁️ ВСКРЫТЬ «${meta.name.toUpperCase()}»`;
       if (isRecommended) {
         btnLabel = '👁️ ВСКРЫТЬ ПРОФЕССИЮ (РАУНД 1)';
       }
@@ -1104,6 +1122,8 @@
       let lockHint = '';
       if (isR1 && cat !== 'profession' && !card.revealed) {
         lockHint = '<div class="card-lock-hint">🔒 Доступно для вскрытия со 2-го раунда</div>';
+      } else if (!isR1 && !isMyTurn && !card.revealed) {
+        lockHint = '<div class="card-lock-hint" style="color: var(--color-cyan);">✨ Доступно для вскрытия в ваш ход</div>';
       } else if (isMyTurn && hasRevealedThisRound && !card.revealed) {
         lockHint = '<div class="card-lock-hint">🔒 Лимит на этот раунд исчерпан (1 карта в раунд)</div>';
       }
@@ -1762,6 +1782,78 @@
     });
   }
 
+  // --- ROUND BUNKER BRIEFING MODAL (MODAL 8) ---
+  function renderRoundBunkerBriefingModal() {
+    if (!roundBunkerBriefingModal || !gameState) return;
+
+    if (gameState.phase === 'bunker_round_briefing') {
+      if (lastBriefedRound !== gameState.round) {
+        lastBriefedRound = gameState.round;
+        userDismissedRoundBriefing = false;
+      }
+
+      if (!userDismissedRoundBriefing) {
+        roundBunkerBriefingModal.classList.remove('hidden');
+      }
+
+      if (roundBriefTitle) {
+        roundBriefTitle.textContent = `Раунд ${gameState.round}: Новый отсек и угроза`;
+      }
+
+      const pairs = gameState.bunker_threat_pairs || [];
+      const currentPair = pairs[gameState.round - 1];
+      if (currentPair) {
+        if (roundBriefBunkerName) roundBriefBunkerName.textContent = currentPair.bunker ? currentPair.bunker.name : 'Отсек бункера';
+        if (roundBriefBunkerDesc) roundBriefBunkerDesc.textContent = currentPair.bunker ? currentPair.bunker.desc : '';
+        if (roundBriefThreatName) roundBriefThreatName.textContent = currentPair.threat ? currentPair.threat.name : 'Угроза бункера';
+        if (roundBriefThreatDesc) roundBriefThreatDesc.textContent = currentPair.threat ? (currentPair.threat.needed || currentPair.threat.desc) : '';
+      }
+
+      const currentSec = gameState.timer_seconds || 0;
+      if (roundBriefTimerNum) roundBriefTimerNum.textContent = currentSec;
+
+      const isHost = (gameState.host_id === gameState.my_id);
+      if (roundBriefSkipHostBtn) {
+        if (isHost) {
+          roundBriefSkipHostBtn.classList.remove('hidden');
+        } else {
+          roundBriefSkipHostBtn.classList.add('hidden');
+        }
+      }
+    } else {
+      roundBunkerBriefingModal.classList.add('hidden');
+    }
+  }
+
+  if (roundBriefReadyBtn) {
+    roundBriefReadyBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      userDismissedRoundBriefing = true;
+      if (roundBunkerBriefingModal) roundBunkerBriefingModal.classList.add('hidden');
+      showToast('👍 <strong>Условия приняты!</strong> Готовьтесь к защите в этом раунде.');
+    });
+  }
+
+  if (closeRoundBriefModalBtn) {
+    closeRoundBriefModalBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      userDismissedRoundBriefing = true;
+      if (roundBunkerBriefingModal) roundBunkerBriefingModal.classList.add('hidden');
+    });
+  }
+
+  if (roundBriefSkipHostBtn) {
+    roundBriefSkipHostBtn.addEventListener('click', () => {
+      initAudio();
+      soundAlarm();
+      userDismissedRoundBriefing = true;
+      if (roundBunkerBriefingModal) roundBunkerBriefingModal.classList.add('hidden');
+      ws.send(jsonStr({ action: 'skip_round_briefing' }));
+    });
+  }
+
   // --- TEMPO BUTTONS IN LOBBY ---
   if (tempoBtnGroup) {
     tempoBtnGroup.addEventListener('click', (e) => {
@@ -1884,6 +1976,24 @@
             catastropheBriefingModal.dataset.manuallyOpened = 'true';
             renderCatastropheBriefingModal(true);
           }
+        };
+      }
+      return;
+    }
+
+    if (gameState.phase === 'bunker_round_briefing') {
+      smartGuidanceBanner.classList.add('my-turn-highlight');
+      if (guidanceIcon) guidanceIcon.textContent = '🏢';
+      if (guidanceTitle) guidanceTitle.textContent = `РАУНД ${gameState.round}: ИССЛЕДОВАНЫ НОВЫЕ УСЛОВИЯ БУНКЕРА`;
+      if (guidanceDesc) guidanceDesc.textContent = 'Открыт новый отсек и обнаружена угроза! Идёт 1 минута на общее обсуждение перед речами.';
+      if (guidanceActionBtn) {
+        guidanceActionBtn.classList.remove('hidden');
+        guidanceActionBtn.textContent = '🏢 Открыть условия раунда';
+        guidanceActionBtn.onclick = () => {
+          initAudio();
+          soundClick();
+          userDismissedRoundBriefing = false;
+          if (roundBunkerBriefingModal) roundBunkerBriefingModal.classList.remove('hidden');
         };
       }
       return;

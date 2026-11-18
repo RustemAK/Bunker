@@ -378,6 +378,11 @@ class Room:
                     advance_round(self)
                 await broadcast_room(self)
                 await trigger_bot_actions(self)
+
+            elif auto_phase_on_zero == "start_round_turns" and self.phase == "bunker_round_briefing":
+                start_round_speeches(self)
+                await broadcast_room(self)
+                await trigger_bot_actions(self)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -591,7 +596,7 @@ def init_game(room):
     room.add_log(f"🛡️ Вместимость бункера: {bunker_capacity} из {len(p_keys)} выживших (половина участников).")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
     room.add_log("📖 Брифинг катастрофы: ознакомьтесь с условиями выживания перед началом отбора!")
-    room.start_timer(25, auto_phase_on_zero="start_round_1")
+    room.start_timer(60, auto_phase_on_zero="start_round_1")
 
 def next_player_turn(room):
     non_exiled = [pid for pid in room.turn_order if not room.players[pid].is_exiled]
@@ -769,13 +774,14 @@ def advance_round(room):
         room.add_log("🏁 Раунд 5 завершён! Выжившие входят в Бункер. Начинается ФИНАЛ!")
     else:
         room.round += 1
-        room.phase = "turns"
+        room.phase = "bunker_round_briefing"
         # Reveal new Bunker + Threat pair
         if room.round - 1 < len(room.bunker_threat_pairs):
             room.bunker_threat_pairs[room.round - 1]["revealed"] = True
             b_name = room.bunker_threat_pairs[room.round - 1]["bunker"]["name"]
             t_name = room.bunker_threat_pairs[room.round - 1]["threat"]["name"]
-            room.add_log(f"📦 Раунд {room.round}: Вскрыты отсек «{b_name}» и Угроза «{t_name}»!")
+            room.add_log(f"🏢 РАУНД {room.round}: Исследован отсек «{b_name}» и Угроза «{t_name}»!")
+            room.add_log("💬 60 секунд на общее обсуждение условий бункера перед началом выступлений!")
 
         # Reset votes and round-specific buffs
         for p in room.players.values():
@@ -793,9 +799,19 @@ def advance_round(room):
         while room.players[room.get_active_player_id()].is_exiled:
             room.active_turn_index = (room.active_turn_index + 1) % len(room.turn_order)
 
-        active_p = room.players[room.get_active_player_id()]
-        room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
-        room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
+        room.start_timer(60, auto_phase_on_zero="start_round_turns")
+
+def start_round_speeches(room):
+    if room.phase != "bunker_round_briefing":
+        return
+    room.stop_timer()
+    room.phase = "turns"
+    while room.players[room.get_active_player_id()].is_exiled:
+        room.active_turn_index = (room.active_turn_index + 1) % len(room.turn_order)
+
+    active_p = room.players[room.get_active_player_id()]
+    room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
+    room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
 
 def procedural_ai_analysis(cat, survivors, exiled, revealed_bunkers, revealed_threats):
 
@@ -1256,6 +1272,16 @@ async def ws_handler(websocket):
                 active_p = room.players[room.get_active_player_id()]
                 room.add_log(f"🎤 Командир завершил брифинг. Раунд 1: первым выступает {active_p.name} — вскройте Профессию!")
                 room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
+                await broadcast_room(room)
+                await trigger_bot_actions(room)
+
+            elif msg_type in ("skip_round_briefing", "start_round_turns"):
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "bunker_round_briefing":
+                    continue
+                start_round_speeches(room)
                 await broadcast_room(room)
                 await trigger_bot_actions(room)
 
