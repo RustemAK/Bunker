@@ -127,6 +127,43 @@
 
   let currentSurvivorFilter = 'all';
   let pingInterval = null;
+  let currentOpenDossierId = null;
+  let specialCastSourcePlayerId = null;
+
+  // Offline / Host-Only Party Mode Elements
+  const hostOfflineSetupBox = document.getElementById('hostOfflineSetupBox');
+  const offlinePlayerNameInput = document.getElementById('offlinePlayerNameInput');
+  const addOfflinePlayerBtn = document.getElementById('addOfflinePlayerBtn');
+  const toggleHostSpectatorBtn = document.getElementById('toggleHostSpectatorBtn');
+
+  const spectatorDeckNotice = document.getElementById('spectatorDeckNotice');
+  const myPersonalDeckWrapper = document.getElementById('myPersonalDeckWrapper');
+  const offlineDistributionPanel = document.getElementById('offlineDistributionPanel');
+  const offlineDistList = document.getElementById('offlineDistList');
+
+  const dosOfflineActions = document.getElementById('dosOfflineActions');
+  const dosCopyCardsBtn = document.getElementById('dosCopyCardsBtn');
+  const dosShowCardsBtn = document.getElementById('dosShowCardsBtn');
+  const dosOfflineSpecialBox = document.getElementById('dosOfflineSpecialBox');
+  const dosPlaySpecialBtn = document.getElementById('dosPlaySpecialBtn');
+
+  const offlineSecretModal = document.getElementById('offlineSecretModal');
+  const closeOffSecBtn = document.getElementById('closeOffSecBtn');
+  const offSecAvatar = document.getElementById('offSecAvatar');
+  const offSecName = document.getElementById('offSecName');
+  const offSecCover = document.getElementById('offSecCover');
+  const offSecCoverName = document.getElementById('offSecCoverName');
+  const offSecRevealBtn = document.getElementById('offSecRevealBtn');
+  const offSecContent = document.getElementById('offSecContent');
+  const offSecCardsList = document.getElementById('offSecCardsList');
+  const offSecSpecialBox = document.getElementById('offSecSpecialBox');
+  const offSecSpecialName = document.getElementById('offSecSpecialName');
+  const offSecSpecialDesc = document.getElementById('offSecSpecialDesc');
+  const offSecHideBtn = document.getElementById('offSecHideBtn');
+
+  const hostOfflineVotingConsole = document.getElementById('hostOfflineVotingConsole');
+  const offlineVotingRows = document.getElementById('offlineVotingRows');
+  const hostFinishOfflineVoteBtn = document.getElementById('hostFinishOfflineVoteBtn');
 
 
   // Special Card
@@ -427,28 +464,64 @@
   function renderWaitingRoom() {
     waitRoomCode.textContent = gameState.room_code;
     roomCodeBig.textContent = gameState.room_code;
-    playerCount.textContent = gameState.players.length;
 
-    const n = gameState.players.length;
+    const activePlayersInLobby = gameState.players.filter(p => !p.is_spectator);
+    playerCount.textContent = activePlayersInLobby.length;
+
+    const n = activePlayersInLobby.length;
     const capacity = Math.max(1, Math.floor(n / 2));
     const lobbyCapNum = document.getElementById('lobbyCapacityNum');
     if (lobbyCapNum) lobbyCapNum.textContent = `${capacity} из ${n}`;
+
+    const isHost = (gameState.host_id === gameState.my_id);
 
     lobbyPlayersList.innerHTML = '';
     gameState.players.forEach(p => {
       const card = document.createElement('div');
       card.className = 'player-lobby-card';
+      let roleText = 'Выживший';
+      if (p.is_host) {
+        roleText = p.is_spectator ? '🎛️ Ведущий (Только пульт)' : '👑 Создатель бункера';
+      } else if (p.is_offline) {
+        roleText = '📱 Без телефона (Офлайн)';
+      }
       card.innerHTML = `
         <span class="p-avatar">${p.avatar}</span>
         <div>
           <div class="p-name">${escapeHtml(p.name)} ${p.id === gameState.my_id ? '(Вы)' : ''}</div>
-          <div class="p-role">${p.is_host ? '👑 Создатель бункера' : 'Выживший'}</div>
+          <div class="p-role">${roleText}</div>
         </div>
+        ${isHost && p.is_offline ? `<button class="lobby-remove-btn" data-remove-id="${p.id}" title="Удалить">✕</button>` : ''}
       `;
+      if (isHost && p.is_offline) {
+        const remBtn = card.querySelector('.lobby-remove-btn');
+        if (remBtn) {
+          remBtn.addEventListener('click', () => {
+            initAudio();
+            soundClick();
+            ws.send(jsonStr({ action: 'remove_offline_player', target_id: p.id }));
+          });
+        }
+      }
       lobbyPlayersList.appendChild(card);
     });
 
-    const isHost = (gameState.host_id === gameState.my_id);
+    if (hostOfflineSetupBox) {
+      if (isHost) {
+        hostOfflineSetupBox.classList.remove('hidden');
+        if (toggleHostSpectatorBtn) {
+          toggleHostSpectatorBtn.textContent = gameState.host_is_spectator
+            ? '🎛️ Сейчас: Только пульт ведущего (без карт) — нажмите, чтобы играть'
+            : '🃏 Сейчас: Играю как участник — нажмите, чтобы стать только пультом';
+          toggleHostSpectatorBtn.className = gameState.host_is_spectator
+            ? 'btn btn-amber btn-sm'
+            : 'btn btn-secondary btn-sm';
+        }
+      } else {
+        hostOfflineSetupBox.classList.add('hidden');
+      }
+    }
+
     if (tempoControlBox) {
       if (isHost) {
         tempoControlBox.classList.remove('hidden');
@@ -583,6 +656,11 @@
     renderBunkerTab();
     renderLiveLog();
 
+    if (currentOpenDossierId && !dossierModal.classList.contains('hidden')) {
+      const openP = gameState.players.find(pl => pl.id === currentOpenDossierId);
+      if (openP) openPlayerDossier(openP);
+    }
+
     // Modal triggers based on phase
     if (gameState.phase === 'voting') {
       renderVotingModal();
@@ -711,10 +789,94 @@
     ws.send(jsonStr({ action: 'start_voting' }));
   });
 
+  // --- OFFLINE CARDS EXPORT & PASS-THE-PHONE VIEWER ---
+  function formatOfflineCardsText(player) {
+    const hand = player.offline_full_hand || player.hand || {};
+    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    let text = `☢️ БУНКЕР 3.3 — Карты игрока ${player.name} ${player.avatar}\n`;
+    if (gameState && gameState.catastrophe) {
+      text += `Катастрофа: ${gameState.catastrophe.name}\n`;
+    }
+    text += `\n`;
+    catOrder.forEach(cat => {
+      const c = hand[cat];
+      if (c && c.name) {
+        text += `• ${translateCategory(cat)}: ${c.name} (${c.desc || ''})\n`;
+      }
+    });
+    if (player.special_condition) {
+      text += `\n⚡ Особое условие: ${player.special_condition.name} — ${player.special_condition.desc}\n`;
+    }
+    return text.trim();
+  }
+
+  function copyOrShareOfflineCards(player) {
+    const text = formatOfflineCardsText(player);
+    if (navigator.share) {
+      navigator.share({
+        title: `Карты Бункер 3.3 — ${player.name}`,
+        text: text
+      }).catch(() => {
+        // Fallback to clipboard if share cancelled
+        copyTextFallback(text, player.name);
+      });
+    } else {
+      copyTextFallback(text, player.name);
+    }
+  }
+
+  function copyTextFallback(text, playerName) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(`📋 Карты <strong>${escapeHtml(playerName)}</strong> скопированы! Вставьте в чат.`);
+      }).catch(() => {
+        prompt(`Скопируйте карты для ${playerName}:`, text);
+      });
+    } else {
+      prompt(`Скопируйте карты для ${playerName}:`, text);
+    }
+  }
+
+  function openOfflineSecretModal(player) {
+    const hand = player.offline_full_hand || player.hand || {};
+    offSecAvatar.textContent = player.avatar;
+    offSecName.textContent = player.name;
+    offSecCoverName.textContent = player.name;
+
+    offSecCover.classList.remove('hidden');
+    offSecContent.classList.add('hidden');
+
+    offSecCardsList.innerHTML = '';
+    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    catOrder.forEach(cat => {
+      const c = hand[cat];
+      if (!c) return;
+      const row = document.createElement('div');
+      row.className = 'dossier-card-row is-open';
+      row.innerHTML = `
+        <div class="row-cat">${translateCategory(cat)} (${c.badge || 'Характеристика'})</div>
+        <div class="row-title">${escapeHtml(c.name || 'Скрыто')} ${c.icon || ''}</div>
+        <div class="row-desc">${escapeHtml(c.desc || '')}</div>
+      `;
+      offSecCardsList.appendChild(row);
+    });
+
+    if (player.special_condition) {
+      offSecSpecialBox.classList.remove('hidden');
+      offSecSpecialName.textContent = player.special_condition.name;
+      offSecSpecialDesc.textContent = player.special_condition.desc;
+    } else {
+      offSecSpecialBox.classList.add('hidden');
+    }
+
+    offlineSecretModal.classList.remove('hidden');
+  }
+
   // --- DOSSIER MODAL (DETAILED CARDS OF ANY PLAYER) ---
   function openPlayerDossier(player) {
+    currentOpenDossierId = player.id;
     dosAvatar.textContent = player.avatar;
-    dosName.textContent = player.name + (player.id === gameState.my_id ? ' (Вы)' : '');
+    dosName.textContent = player.name + (player.id === gameState.my_id ? ' (Вы)' : '') + (player.is_offline ? ' [Офлайн]' : '');
     
     if (player.is_exiled) {
       dosStatusBadge.textContent = 'ИЗГНАН ИЗ БУНКЕРА';
@@ -728,6 +890,32 @@
     const revCount = handList.filter(([_, c]) => c.revealed).length;
     dosRevealedCount.textContent = `${revCount}/6`;
     dosTurnStatus.textContent = player.is_active_turn ? 'Открывает карту' : 'Ожидает';
+
+    const isHost = (gameState.host_id === gameState.my_id);
+    if (dosOfflineActions) {
+      if (isHost && player.is_offline) {
+        dosOfflineActions.classList.remove('hidden');
+        dosCopyCardsBtn.onclick = () => {
+          initAudio(); soundClick();
+          copyOrShareOfflineCards(player);
+        };
+        dosShowCardsBtn.onclick = () => {
+          initAudio(); soundClick();
+          openOfflineSecretModal(player);
+        };
+        if (player.special_condition && !player.special_condition.played && !player.is_exiled) {
+          dosOfflineSpecialBox.classList.remove('hidden');
+          dosPlaySpecialBtn.onclick = () => {
+            initAudio(); soundClick();
+            triggerSpecialCardForPlayer(player, true);
+          };
+        } else {
+          dosOfflineSpecialBox.classList.add('hidden');
+        }
+      } else {
+        dosOfflineActions.classList.add('hidden');
+      }
+    }
 
     dosCardsList.innerHTML = '';
     const categoryOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
@@ -746,6 +934,26 @@
           <div class="row-desc">${escapeHtml(card.desc || '')}</div>
           ${card.quote ? `<div class="card-quote">${escapeHtml(card.quote)}</div>` : ''}
         `;
+      } else if (isHost && player.is_offline && gameState.status === 'in_game') {
+        row.classList.add('is-locked-host');
+        const round1Blocked = (gameState.round === 1 && cat !== 'profession');
+        row.innerHTML = `
+          <div>
+            <div class="row-cat">🔒 ${translateCategory(cat)}</div>
+            <div class="row-title">Засекречено</div>
+            <div class="row-desc">${round1Blocked ? 'В 1-м раунде открывается только Профессия' : 'Нажмите «Вскрыть», когда игрок откроет карту вживую'}</div>
+          </div>
+          <button class="btn btn-amber btn-sm host-reveal-cat-btn" ${round1Blocked ? 'disabled style="opacity:0.4;"' : ''}>
+            👁️ Вскрыть
+          </button>
+        `;
+        if (!round1Blocked) {
+          row.querySelector('.host-reveal-cat-btn').addEventListener('click', () => {
+            initAudio();
+            soundReveal();
+            ws.send(jsonStr({ action: 'host_reveal_card', target_id: player.id, category: cat }));
+          });
+        }
       } else {
         row.innerHTML = `
           <div class="row-cat">🔒 ${translateCategory(cat)}</div>
@@ -762,12 +970,62 @@
   closeDossierBtn.addEventListener('click', () => {
     initAudio();
     soundClick();
+    currentOpenDossierId = null;
     dossierModal.classList.add('hidden');
   });
 
   // --- TAB 2: MY DECK (SECRET CARDS) ---
   function renderMyDeck() {
     const me = gameState.players.find(p => p.id === gameState.my_id);
+    const isHost = (gameState.host_id === gameState.my_id);
+    const offlinePlayers = (gameState.players || []).filter(p => p.is_offline);
+
+    if (offlineDistributionPanel) {
+      if (isHost && offlinePlayers.length > 0) {
+        offlineDistributionPanel.classList.remove('hidden');
+        offlineDistList.innerHTML = '';
+        offlinePlayers.forEach(op => {
+          const row = document.createElement('div');
+          row.className = 'offline-dist-row';
+          row.innerHTML = `
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:1.5rem;">${op.avatar}</span>
+              <div>
+                <strong style="color:#fff;">${escapeHtml(op.name)}</strong>
+                <div style="font-size:0.75rem; color:var(--text-muted);">${op.is_exiled ? '❌ Изгнан' : '🛡️ В игре'}</div>
+              </div>
+            </div>
+            <div class="offline-dist-btns">
+              <button class="btn btn-primary btn-sm dist-copy-btn">📋 Копировать / Отправить</button>
+              <button class="btn btn-secondary btn-sm dist-show-btn">📱 На экран</button>
+            </div>
+          `;
+          row.querySelector('.dist-copy-btn').addEventListener('click', () => {
+            initAudio(); soundClick();
+            copyOrShareOfflineCards(op);
+          });
+          row.querySelector('.dist-show-btn').addEventListener('click', () => {
+            initAudio(); soundClick();
+            openOfflineSecretModal(op);
+          });
+          offlineDistList.appendChild(row);
+        });
+      } else {
+        offlineDistributionPanel.classList.add('hidden');
+      }
+    }
+
+    if (gameState.host_is_spectator && isHost) {
+      if (spectatorDeckNotice) spectatorDeckNotice.classList.remove('hidden');
+      if (myPersonalDeckWrapper) myPersonalDeckWrapper.classList.add('hidden');
+      const myDeckNotice = document.getElementById('myDeckNotice');
+      if (myDeckNotice) myDeckNotice.classList.add('hidden');
+      return;
+    } else {
+      if (spectatorDeckNotice) spectatorDeckNotice.classList.add('hidden');
+      if (myPersonalDeckWrapper) myPersonalDeckWrapper.classList.remove('hidden');
+    }
+
     if (!me) return;
 
     const isMyTurn = (gameState.active_player_id === gameState.my_id && gameState.phase === 'turns');
@@ -835,11 +1093,9 @@
     }
   }
 
-  playSpecialBtn.addEventListener('click', () => {
-    const me = gameState.players.find(p => p.id === gameState.my_id);
-    if (!me || !me.special_condition || me.special_condition.played) return;
-
-    const spc = me.special_condition;
+  function triggerSpecialCardForPlayer(sourcePlayer, isHostForOffline) {
+    if (!sourcePlayer || !sourcePlayer.special_condition || sourcePlayer.special_condition.played) return;
+    const spc = sourcePlayer.special_condition;
     const needsTarget = [
       'spc_swap_luggage',
       'spc_lie_detector',
@@ -853,7 +1109,7 @@
       'spc_copy_profession',
       'spc_peace_treaty'
     ].includes(spc.id);
-    const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== gameState.my_id);
+    const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== sourcePlayer.id);
 
     if (needsTarget) {
       if (aliveOpponents.length === 0) {
@@ -861,17 +1117,22 @@
         return;
       }
       if (aliveOpponents.length === 1) {
-        if (confirm(`Разыграть козырь «${spc.name}» против игрока ${aliveOpponents[0].name}?`)) {
+        if (confirm(`Разыграть козырь «${spc.name}» (${sourcePlayer.name}) против игрока ${aliveOpponents[0].name}?`)) {
           initAudio();
           soundAlarm();
-          ws.send(jsonStr({ action: 'play_special', target_id: aliveOpponents[0].id }));
+          if (isHostForOffline) {
+            ws.send(jsonStr({ action: 'host_play_special', player_id: sourcePlayer.id, target_id: aliveOpponents[0].id }));
+          } else {
+            ws.send(jsonStr({ action: 'play_special', target_id: aliveOpponents[0].id }));
+          }
         }
         return;
       }
 
       // Open target modal
+      specialCastSourcePlayerId = isHostForOffline ? sourcePlayer.id : null;
       specialModalTitle.textContent = spc.name;
-      specialModalPrompt.textContent = spc.desc;
+      specialModalPrompt.textContent = (isHostForOffline ? `[За ${sourcePlayer.name}] ` : '') + spc.desc;
       specialTargetsList.innerHTML = '';
       selectedSpecialTargetId = null;
       confirmSpecialTargetBtn.disabled = true;
@@ -901,13 +1162,21 @@
 
       specialTargetModal.classList.remove('hidden');
     } else {
-      // Direct activation
-      if (confirm(`Вы уверены, что хотите разыграть «${spc.name}» прямо сейчас?\n\nДействие: ${spc.desc}`)) {
+      if (confirm(`Разыграть «${spc.name}» (${sourcePlayer.name}) прямо сейчас?\n\nДействие: ${spc.desc}`)) {
         initAudio();
         soundAlarm();
-        ws.send(jsonStr({ action: 'play_special' }));
+        if (isHostForOffline) {
+          ws.send(jsonStr({ action: 'host_play_special', player_id: sourcePlayer.id }));
+        } else {
+          ws.send(jsonStr({ action: 'play_special' }));
+        }
       }
     }
+  }
+
+  playSpecialBtn.addEventListener('click', () => {
+    const me = gameState.players.find(p => p.id === gameState.my_id);
+    triggerSpecialCardForPlayer(me, false);
   });
 
   if (confirmSpecialTargetBtn) {
@@ -915,7 +1184,12 @@
       if (!selectedSpecialTargetId) return;
       initAudio();
       soundAlarm();
-      ws.send(jsonStr({ action: 'play_special', target_id: selectedSpecialTargetId }));
+      if (specialCastSourcePlayerId) {
+        ws.send(jsonStr({ action: 'host_play_special', player_id: specialCastSourcePlayerId, target_id: selectedSpecialTargetId }));
+      } else {
+        ws.send(jsonStr({ action: 'play_special', target_id: selectedSpecialTargetId }));
+      }
+      specialCastSourcePlayerId = null;
       specialTargetModal.classList.add('hidden');
     });
   }
@@ -960,12 +1234,89 @@
     });
   }
 
+  // --- HOST LIVE VOTING CONSOLE (OFFLINE PLAYERS) ---
+  function renderHostOfflineVotingConsole() {
+    if (!hostOfflineVotingConsole) return;
+    const isHost = (gameState.host_id === gameState.my_id);
+    const showConsole = isHost && (gameState.has_offline_players || gameState.host_is_spectator);
+    if (!showConsole) {
+      hostOfflineVotingConsole.classList.add('hidden');
+      return;
+    }
+
+    hostOfflineVotingConsole.classList.remove('hidden');
+    offlineVotingRows.innerHTML = '';
+
+    const isRevote = !!gameState.is_tie_revote;
+    const tiedIds = (gameState.tie_data && gameState.tie_data.tied_candidate_ids) || [];
+    const offlineVotes = gameState.offline_votes || {};
+
+    const aliveCands = (gameState.players || []).filter(p => !p.is_exiled);
+    aliveCands.forEach(cand => {
+      const isImmune = !!cand.immunity_this_round;
+      const inTie = !isRevote || tiedIds.includes(cand.id);
+      if (!inTie) return;
+
+      const count = offlineVotes[cand.id] || 0;
+      const row = document.createElement('div');
+      row.className = 'offline-vote-row';
+      row.innerHTML = `
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:1.4rem;">${cand.avatar}</span>
+          <div>
+            <strong style="color:#fff;">${escapeHtml(cand.name)}</strong>
+            ${isImmune ? '<span class="hazard-badge" style="margin-left:4px; font-size:0.65rem;">🛡️ Иммунитет</span>' : ''}
+          </div>
+        </div>
+        <div class="offline-vote-controls">
+          <button class="btn btn-secondary btn-sm off-vote-minus" ${isImmune ? 'disabled' : ''}>−</button>
+          <span class="vote-count-pill">${count}</span>
+          <button class="btn btn-amber btn-sm off-vote-plus" ${isImmune ? 'disabled' : ''}>+</button>
+          <button class="btn btn-danger btn-sm off-vote-exile" title="Сразу изгнать по итогам живого голосования" ${isImmune ? 'disabled' : ''}>⚡ Изгнать</button>
+        </div>
+      `;
+
+      if (!isImmune) {
+        row.querySelector('.off-vote-minus').addEventListener('click', () => {
+          initAudio(); soundClick();
+          ws.send(jsonStr({ action: 'host_set_offline_votes', target_id: cand.id, delta: -1 }));
+        });
+        row.querySelector('.off-vote-plus').addEventListener('click', () => {
+          initAudio(); soundClick();
+          ws.send(jsonStr({ action: 'host_set_offline_votes', target_id: cand.id, delta: 1 }));
+        });
+        row.querySelector('.off-vote-exile').addEventListener('click', () => {
+          if (confirm(`Изгнать игрока ${cand.name} по итогам живого голосования?`)) {
+            initAudio(); soundAlarm();
+            ws.send(jsonStr({ action: 'host_direct_exile', target_id: cand.id }));
+          }
+        });
+      }
+      offlineVotingRows.appendChild(row);
+    });
+  }
+
   // --- VOTING MODAL ---
   function renderVotingModal() {
     voteRoundNum.textContent = gameState.round;
     candidatesList.innerHTML = '';
     selectedVoteCandidateId = null;
     submitVoteBtn.disabled = true;
+
+    renderHostOfflineVotingConsole();
+
+    const isHost = (gameState.host_id === gameState.my_id);
+    if (isHost && gameState.host_is_spectator) {
+      candidatesList.innerHTML = `
+        <div class="tab-hint" style="text-align: center; padding: 14px;">
+          🎛️ <strong>Вы — Ведущий (Только пульт).</strong><br>
+          Отметьте результаты живого голосования ниже.
+        </div>
+      `;
+      submitVoteBtn.classList.add('hidden');
+      votingModal.classList.remove('hidden');
+      return;
+    }
 
     const me = gameState.players.find(p => p.id === gameState.my_id);
     if (me && me.is_exiled) {
@@ -1353,6 +1704,58 @@
       renderSurvivorsGrid();
     });
   });
+
+  // --- OFFLINE / HOST-ONLY PARTY MODE LISTENERS ---
+  if (addOfflinePlayerBtn && offlinePlayerNameInput) {
+    const submitOfflineAdd = () => {
+      const name = offlinePlayerNameInput.value.trim();
+      if (!name) return;
+      initAudio();
+      soundClick();
+      const avatars = ['👨‍🔬', '👩‍⚕️', '🕵️', '👨‍🚀', '🤠', '🤖', '🦹', '🧙', '🧑‍🚒', '🧑‍✈️', '🧑‍🌾', '🥷'];
+      const av = avatars[Math.floor(Math.random() * avatars.length)];
+      ws.send(jsonStr({ action: 'add_offline_player', name, avatar: av }));
+      offlinePlayerNameInput.value = '';
+      offlinePlayerNameInput.focus();
+    };
+    addOfflinePlayerBtn.addEventListener('click', submitOfflineAdd);
+    offlinePlayerNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitOfflineAdd();
+    });
+  }
+
+  if (toggleHostSpectatorBtn) {
+    toggleHostSpectatorBtn.addEventListener('click', () => {
+      initAudio();
+      soundClick();
+      ws.send(jsonStr({ action: 'toggle_host_spectator' }));
+    });
+  }
+
+  if (hostFinishOfflineVoteBtn) {
+    hostFinishOfflineVoteBtn.addEventListener('click', () => {
+      initAudio();
+      soundAlarm();
+      ws.send(jsonStr({ action: 'end_voting_force' }));
+    });
+  }
+
+  if (offSecRevealBtn) {
+    offSecRevealBtn.addEventListener('click', () => {
+      initAudio();
+      soundReveal();
+      offSecCover.classList.add('hidden');
+      offSecContent.classList.remove('hidden');
+    });
+  }
+
+  const closeOffSec = () => {
+    initAudio();
+    soundClick();
+    offlineSecretModal.classList.add('hidden');
+  };
+  if (offSecHideBtn) offSecHideBtn.addEventListener('click', closeOffSec);
+  if (closeOffSecBtn) closeOffSecBtn.addEventListener('click', closeOffSec);
 
   // Quick view catastrophe button in HUD
   document.getElementById('viewCatastropheBtn').addEventListener('click', () => {

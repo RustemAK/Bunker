@@ -1889,3 +1889,162 @@ input[type="text"]:focus {
   font-weight: 700;
 }
 
+/* ================= OFFLINE / HOST-ONLY PARTY MODE ================= */
+.host-offline-setup {
+  margin-bottom: 20px;
+  padding: 16px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.offline-add-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.offline-add-row input {
+  flex: 1;
+}
+
+@media (max-width: 520px) {
+  .offline-add-row {
+    flex-direction: column;
+  }
+}
+
+.host-role-toggle {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: 12px;
+  text-align: center;
+}
+
+.lobby-remove-btn {
+  margin-left: auto;
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: var(--color-danger-light);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  font-size: 0.8rem;
+}
+
+.lobby-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.offline-dist-panel {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
+.offline-dist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.offline-dist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 10px 14px;
+  flex-wrap: wrap;
+}
+
+.offline-dist-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dos-offline-actions {
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 14px;
+}
+
+.dos-offline-btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dos-offline-special {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(245, 158, 11, 0.35);
+  flex-wrap: wrap;
+}
+
+.dossier-card-row.is-locked-host {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.off-sec-cover {
+  text-align: center;
+  padding: 30px 15px;
+}
+
+.host-offline-voting {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--color-amber);
+}
+
+.offline-voting-divider {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-amber);
+  margin-bottom: 6px;
+}
+
+.offline-voting-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.offline-vote-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+
+.offline-vote-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vote-count-pill {
+  font-family: var(--font-mono);
+  font-weight: 800;
+  min-width: 28px;
+  text-align: center;
+  color: var(--color-amber);
+  font-size: 1rem;
+}
+

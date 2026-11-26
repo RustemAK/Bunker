@@ -108,6 +108,28 @@
           <!-- Dynamically populated -->
         </div>
 
+        <!-- HOST OFFLINE / SOLO PARTY CONTROLS -->
+        <div id="hostOfflineSetupBox" class="host-offline-setup glass-panel hidden">
+          <div class="offline-setup-header">
+            <span class="hazard-badge" style="background: rgba(16, 185, 129, 0.2); border-color: var(--color-emerald); color: var(--color-emerald-light);">🎛️ РЕЖИМ ОФЛАЙН-ВЕЧЕРИНКИ (ПУЛЬТ ВЕДУЩЕГО)</span>
+            <p class="hint-text" style="margin-bottom: 10px;">
+              Добавляйте игроков без телефонов или интернета — вы сможете отправлять им карты в мессенджер или показывать на своём экране, а также вскрывать их карты в реальном времени.
+            </p>
+          </div>
+
+          <div class="offline-add-row">
+            <input type="text" id="offlinePlayerNameInput" maxlength="20" placeholder="Имя игрока (например: Артём)" autocomplete="off">
+            <button id="addOfflinePlayerBtn" class="btn btn-primary">➕ Добавить игрока</button>
+          </div>
+
+          <div class="host-role-toggle">
+            <span class="tempo-label" style="margin-bottom: 6px;">🎮 ВАША РОЛЬ (СОЗДАТЕЛЯ):</span>
+            <button id="toggleHostSpectatorBtn" class="btn btn-secondary btn-sm">
+              🃏 Сейчас: Играю как участник (нажмите, чтобы стать только пультом)
+            </button>
+          </div>
+        </div>
+
         <div class="waiting-footer">
           <div id="tempoControlBox" class="tempo-control-box hidden">
             <span class="tempo-label">⏱️ ТЕМП РЕЧИ ВЫЖИВШИХ:</span>
@@ -245,28 +267,48 @@
 
       <!-- TAB 2: MY DECK & SECRET CARDS -->
       <div id="tabMyDeck" class="tab-content">
-        <div class="my-deck-header">
-          <div>
-            <h3>ЛИЧНЫЕ КАРТЫ ВЫЖИВШЕГО</h3>
-            <p class="hint-text">Скрытые карты видите только вы. Вскрывайте их в свой ход для аргументации.</p>
+        <div id="spectatorDeckNotice" class="glass-panel spectator-notice hidden" style="padding: 18px; margin-bottom: 16px; border-color: var(--color-emerald);">
+          <h3 style="color: var(--color-emerald-light); margin-bottom: 6px;">🎛️ РЕЖИМ: ТОЛЬКО ПУЛЬТ ВЕДУЩЕГО</h3>
+          <p class="hint-text" style="margin-bottom: 0;">У вас нет личных карт. Вы управляете партией, раздаёте карты игрокам и вскрываете их со своего телефона.</p>
+        </div>
+
+        <div id="myPersonalDeckWrapper">
+          <div class="my-deck-header">
+            <div>
+              <h3>ЛИЧНЫЕ КАРТЫ ВЫЖИВШЕГО</h3>
+              <p class="hint-text">Скрытые карты видите только вы. Вскрывайте их в свой ход для аргументации.</p>
+            </div>
+            <div id="myTurnAlert" class="my-turn-alert hidden">
+              🚨 ВАШ ХОД! Выберите карту для вскрытия
+            </div>
           </div>
-          <div id="myTurnAlert" class="my-turn-alert hidden">
-            🚨 ВАШ ХОД! Выберите карту для вскрытия
+
+          <div id="myCardsGrid" class="cards-grid">
+            <!-- 6 player cards generated here -->
+          </div>
+
+          <!-- Special Condition Card -->
+          <div class="special-condition-panel glass-panel">
+            <div class="special-badge">⚡ ВАШ КОЗЫРЬ: ОСОБОЕ УСЛОВИЕ</div>
+            <h4 id="mySpecialName">Загрузка...</h4>
+            <p id="mySpecialDesc" class="special-desc">Описание условия...</p>
+            <div class="special-footer">
+              <span class="timing-tag" id="mySpecialTiming">В любой момент</span>
+              <button id="playSpecialBtn" class="btn btn-amber">РАЗЫГРАТЬ КОЗЫРЬ</button>
+            </div>
           </div>
         </div>
 
-        <div id="myCardsGrid" class="cards-grid">
-          <!-- 6 player cards generated here -->
-        </div>
-
-        <!-- Special Condition Card -->
-        <div class="special-condition-panel glass-panel">
-          <div class="special-badge">⚡ ВАШ КОЗЫРЬ: ОСОБОЕ УСЛОВИЕ</div>
-          <h4 id="mySpecialName">Загрузка...</h4>
-          <p id="mySpecialDesc" class="special-desc">Описание условия...</p>
-          <div class="special-footer">
-            <span class="timing-tag" id="mySpecialTiming">В любой момент</span>
-            <button id="playSpecialBtn" class="btn btn-amber">РАЗЫГРАТЬ КОЗЫРЬ</button>
+        <!-- Host Offline Players Card Distribution Panel -->
+        <div id="offlineDistributionPanel" class="glass-panel offline-dist-panel hidden">
+          <div class="special-badge" style="background: rgba(16, 185, 129, 0.2); color: var(--color-emerald-light); border-color: var(--color-emerald);">
+            📤 РАЗДАЧА КАРТ ИГРОКАМ БЕЗ ТЕЛЕФОНА
+          </div>
+          <p class="hint-text" style="margin-top: 6px;">
+            Нажмите <strong>«Копировать / Отправить»</strong>, чтобы переслать секретные карты игроку в Telegram/WhatsApp, или <strong>«Показать на экране»</strong>, чтобы передать ему телефон.
+          </p>
+          <div id="offlineDistList" class="offline-dist-list">
+            <!-- Populated dynamically -->
           </div>
         </div>
       </div>
@@ -323,6 +365,18 @@
           <span>Статус хода: <strong id="dosTurnStatus">Ожидает</strong></span>
         </div>
 
+        <!-- Host Controls for Offline Player in Dossier -->
+        <div id="dosOfflineActions" class="dos-offline-actions hidden">
+          <div class="dos-offline-btn-row">
+            <button id="dosCopyCardsBtn" class="btn btn-primary btn-sm">📋 Копировать / Отправить карты</button>
+            <button id="dosShowCardsBtn" class="btn btn-secondary btn-sm">📱 Показать карты игроку</button>
+          </div>
+          <div id="dosOfflineSpecialBox" class="dos-offline-special hidden">
+            <span style="font-size: 0.8rem; color: var(--color-amber);">⚡ У игрока есть неразыгранная Особая карта</span>
+            <button id="dosPlaySpecialBtn" class="btn btn-amber btn-sm">Разыграть за игрока</button>
+          </div>
+        </div>
+
         <div id="dosCardsList" class="dossier-cards-list">
           <!-- Cards of this player rendered with details or classified locks -->
         </div>
@@ -355,6 +409,61 @@
       <div class="voting-footer">
         <button id="submitVoteBtn" class="btn btn-danger btn-block" disabled>
           ОТДАТЬ ГОЛОС НА ИЗГНАНИЕ
+        </button>
+      </div>
+
+      <!-- HOST LIVE VOTING CONSOLE (FOR OFFLINE PLAYERS) -->
+      <div id="hostOfflineVotingConsole" class="host-offline-voting hidden">
+        <div class="offline-voting-divider">
+          <span>🎛️ ПУЛЬТ ЖИВОГО ГОЛОСОВАНИЯ (БЕЗ ТЕЛЕФОНОВ)</span>
+        </div>
+        <p class="hint-text" style="margin-bottom: 10px;">
+          Отметьте голоса, поданные вживую за столом (кнопки + / -), или сразу изгоните проигравшего.
+        </p>
+        <div id="offlineVotingRows" class="offline-voting-rows">
+          <!-- Candidate +/- rows -->
+        </div>
+        <button id="hostFinishOfflineVoteBtn" class="btn btn-primary btn-block" style="margin-top: 12px;">
+          ✅ ПОДСЧИТАТЬ ГОЛОСА И ПОДВЕСТИ ИТОГИ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2.5: PASS-THE-PHONE SECRET VIEWER (OFFLINE PLAYERS) -->
+  <div id="offlineSecretModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel">
+      <div class="modal-header">
+        <div class="dossier-profile">
+          <span class="dossier-avatar" id="offSecAvatar">🧑</span>
+          <div>
+            <h3 id="offSecName">Игрок</h3>
+            <span class="hazard-badge">🔒 СЕКРЕТНЫЕ КАРТЫ</span>
+          </div>
+        </div>
+        <button id="closeOffSecBtn" class="close-modal-btn">✕</button>
+      </div>
+
+      <div id="offSecCover" class="off-sec-cover">
+        <div style="font-size: 3rem; margin-bottom: 10px;">📱🤝</div>
+        <h4>Передайте телефон игроку <span id="offSecCoverName" class="text-amber">...</span></h4>
+        <p class="hint-text" style="margin: 10px 0 18px;">
+          Убедитесь, что никто другой не смотрит в экран!
+        </p>
+        <button id="offSecRevealBtn" class="btn btn-primary btn-lg">
+          👁️ ПОКАЗАТЬ МОИ КАРТЫ
+        </button>
+      </div>
+
+      <div id="offSecContent" class="off-sec-content hidden">
+        <div id="offSecCardsList" class="dossier-cards-list"></div>
+        <div id="offSecSpecialBox" class="special-condition-panel glass-panel" style="margin-top: 14px;">
+          <div class="special-badge">⚡ ОСОБОЕ УСЛОВИЕ</div>
+          <h4 id="offSecSpecialName">...</h4>
+          <p id="offSecSpecialDesc" class="special-desc">...</p>
+        </div>
+        <button id="offSecHideBtn" class="btn btn-danger btn-block" style="margin-top: 16px;">
+          🙈 СКРЫТЬ КАРТЫ И ВЕРНУТЬ ТЕЛЕФОН
         </button>
       </div>
     </div>

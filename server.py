@@ -51,11 +51,13 @@ def generate_room_code():
             return code
 
 class Player:
-    def __init__(self, player_id, name, avatar, ws=None):
+    def __init__(self, player_id, name, avatar, ws=None, is_offline=False):
         self.id = player_id
         self.name = name
         self.avatar = avatar
         self.ws = ws
+        self.is_offline = is_offline
+        self.is_spectator = False
         self.is_connected = True
         self.is_exiled = False
         self.hand = {}  # category -> {card_data, revealed: bool}
@@ -122,15 +124,20 @@ class Room:
         self.tie_data = None
         self.is_tie_revote = False
         self.speech_timer_duration = 35
+        self.host_is_spectator = False
+        self.offline_votes = {}  # target_id -> int count
+
+    def get_active_players_list(self):
+        return [p for p in self.players.values() if not getattr(p, "is_spectator", False)]
 
     def get_bunker_capacity(self):
-        base = max(1, len(self.players) // 2)
+        base = max(1, len(self.get_active_players_list()) // 2)
         return base + getattr(self, "bunker_capacity_bonus", 0)
 
     def get_exiles_for_current_round(self):
         if getattr(self, "curfew_active", False):
             return 0
-        base_exiles = get_exiles_for_round(len(self.players), self.round)
+        base_exiles = get_exiles_for_round(len(self.get_active_players_list()), self.round)
         bonus = getattr(self, "bunker_capacity_bonus", 0)
         if bonus > 0 and self.round >= 4:
             return max(0, base_exiles - bonus)
@@ -140,7 +147,7 @@ class Room:
         r = round_num if round_num is not None else self.round
         if getattr(self, "curfew_active", False):
             return False
-        return self.get_exiles_for_current_round() > 0 if r == self.round else get_exiles_for_round(len(self.players), r) > 0
+        return self.get_exiles_for_current_round() > 0 if r == self.round else get_exiles_for_round(len(self.get_active_players_list()), r) > 0
 
     def stop_timer(self):
         if self.timer_task and not self.timer_task.done():
@@ -165,6 +172,7 @@ class Room:
             if auto_phase_on_zero == "voting" and self.phase == "debate":
                 if self.has_voting_in_round(self.round):
                     self.phase = "voting"
+                    self.offline_votes = {}
                     for p in self.players.values():
                         p.voted_for = None
                     self.add_log(f"🗳️ Время дебатов истекло! Начинается тайное голосование Раунда {self.round}.")
@@ -198,7 +206,10 @@ class Room:
             p = self.players.get(pid)
             if not p:
                 continue
+            if self.status != "lobby" and getattr(p, "is_spectator", False):
+                continue
             is_self = (p.id == viewer_id)
+            is_host_viewing_offline = (viewer_id == self.host_id and getattr(p, "is_offline", False))
             
             # Format hand
             sanitized_hand = {}
@@ -216,14 +227,16 @@ class Room:
 
             # Special condition
             spec = None
-            if is_self and p.special_condition:
+            if (is_self or is_host_viewing_offline) and p.special_condition:
                 spec = p.special_condition
 
-            players_data.append({
+            p_entry = {
                 "id": p.id,
                 "name": p.name,
                 "avatar": p.avatar,
                 "is_host": (p.id == self.host_id),
+                "is_offline": getattr(p, "is_offline", False),
+                "is_spectator": getattr(p, "is_spectator", False),
                 "is_connected": p.is_connected,
                 "is_exiled": p.is_exiled,
                 "immunity_this_round": p.immunity_this_round,
@@ -234,7 +247,10 @@ class Room:
                 "has_voted": (p.voted_for is not None),
                 "hand": sanitized_hand,
                 "special_condition": spec
-            })
+            }
+            if is_host_viewing_offline:
+                p_entry["offline_full_hand"] = p.hand
+            players_data.append(p_entry)
 
         # Sanitize bunker threat pairs
         pairs_data = []
@@ -261,8 +277,11 @@ class Room:
             "max_rounds": self.max_rounds,
             "phase": self.phase,
             "bunker_capacity": self.get_bunker_capacity(),
-            "total_players": len(self.players),
-            "survivors_count": sum(1 for p in self.players.values() if not p.is_exiled),
+            "total_players": len(self.get_active_players_list()),
+            "survivors_count": sum(1 for p in self.get_active_players_list() if not p.is_exiled),
+            "host_is_spectator": getattr(self, "host_is_spectator", False),
+            "has_offline_players": any(getattr(p, "is_offline", False) for p in self.players.values()),
+            "offline_votes": getattr(self, "offline_votes", {}) if self.phase == "voting" else {},
             "round_has_voting": self.has_voting_in_round(),
             "round_exiles_count": self.get_exiles_for_current_round(),
             "catastrophe": self.catastrophe,
@@ -324,6 +343,7 @@ def init_game(room):
     room.phase = "turns"
     room.last_exiled = None
     room.votes = {}
+    room.offline_votes = {}
     room.tie_data = None
     room.is_tie_revote = False
     room.ai_analysis = None
@@ -345,8 +365,8 @@ def init_game(room):
             "revealed": (i == 0) # Round 1 pair starts revealed!
         })
 
-    # Prepare Decks for players
-    p_keys = list(room.players.keys())
+    # Prepare Decks for active (non-spectator) players
+    p_keys = [pid for pid, p in room.players.items() if not getattr(p, "is_spectator", False)]
     random.shuffle(p_keys)
     room.turn_order = p_keys
     room.active_turn_index = 0
@@ -432,11 +452,11 @@ def resolve_voting(room):
         room.add_log("🚨 КОМЕНДАНТСКИЙ ЧАС: Изгнание отменено! Все выжившие остаются в игре и переходят в следующий раунд.")
         return
 
-    # Collect votes only from NON-EXILED players
+    # Collect votes from NON-EXILED, NON-SPECTATOR players + offline votes entered by host
     vote_counts = {}
     voter_map = {}
     for pid, p in room.players.items():
-        if not p.is_exiled and p.voted_for:
+        if not getattr(p, "is_spectator", False) and not p.is_exiled and p.voted_for:
             target = p.voted_for
             if target in room.players and not room.players[target].is_exiled:
                 # If target has diplomatic immunity, votes against them are ignored
@@ -449,6 +469,15 @@ def resolve_voting(room):
                     voter_map[target] = []
                 voter_label = f"{p.name} (x3 Ультиматум)" if weight == 3 else p.name
                 voter_map[target].append(voter_label)
+
+    for tid, cnt in getattr(room, "offline_votes", {}).items():
+        if cnt > 0 and tid in room.players and not room.players[tid].is_exiled and not getattr(room.players[tid], "is_spectator", False):
+            if getattr(room.players[tid], "immunity_this_round", False):
+                continue
+            vote_counts[tid] = vote_counts.get(tid, 0) + cnt
+            if tid not in voter_map:
+                voter_map[tid] = []
+            voter_map[tid].append(f"Живое голосование ({cnt})")
 
     room.votes = {
         room.players[tid].name: {
@@ -578,6 +607,7 @@ def advance_round(room):
         room.curfew_active = False
         room.tie_data = None
         room.is_tie_revote = False
+        room.offline_votes = {}
         
         # Advance turn order
         room.active_turn_index = (room.round - 1) % len(room.turn_order)
@@ -678,6 +708,8 @@ def generate_bunker_ai_analysis(room, api_key_override=None):
     survivors = []
     exiled = []
     for p in room.players.values():
+        if getattr(p, "is_spectator", False):
+            continue
         p_info = {
             "name": p.name,
             "avatar": p.avatar,
@@ -877,6 +909,50 @@ async def ws_handler(websocket):
                 }, ensure_ascii=False))
                 await broadcast_room(room)
 
+            elif msg_type == "add_offline_player":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                name = data.get("name", "").strip()[:24] or f"Игрок {len(room.players) + 1}"
+                avatar = data.get("avatar", "🧑")
+                player_id = "off_" + "".join(random.choices(string.digits, k=6))
+                player = Player(player_id, name, avatar, ws=None, is_offline=True)
+                room.players[player_id] = player
+                room.turn_order.append(player_id)
+                room.add_log(f"📱 Ведущий добавил офлайн-игрока: {name} {avatar}")
+                await broadcast_room(room)
+
+            elif msg_type == "remove_offline_player":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                target_id = data.get("target_id")
+                target_p = room.players.get(target_id)
+                if target_p and getattr(target_p, "is_offline", False):
+                    del room.players[target_id]
+                    if target_id in room.turn_order:
+                        room.turn_order.remove(target_id)
+                    room.add_log(f"🗑️ Ведущий удалил игрока {target_p.name} из лобби.")
+                    await broadcast_room(room)
+
+            elif msg_type == "toggle_host_spectator":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                room.host_is_spectator = not getattr(room, "host_is_spectator", False)
+                host_p = room.players.get(room.host_id)
+                if host_p:
+                    host_p.is_spectator = room.host_is_spectator
+                mode_label = "Только пульт ведущего (без карт)" if room.host_is_spectator else "Участник с картами"
+                room.add_log(f"🎛️ Режим создателя изменён: {mode_label}.")
+                await broadcast_room(room)
+
             elif msg_type == "start_game":
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
@@ -885,8 +961,8 @@ async def ws_handler(websocket):
                     await websocket.send(json.dumps({"type": "error", "message": "Только создатель комнаты может запустить игру!"}, ensure_ascii=False))
                     continue
 
-                if len(room.players) < 2:
-                    await websocket.send(json.dumps({"type": "error", "message": "Для игры нужно минимум 2 игрока!"}, ensure_ascii=False))
+                if len(room.get_active_players_list()) < 2:
+                    await websocket.send(json.dumps({"type": "error", "message": "Для игры нужно минимум 2 активных игрока (добавьте офлайн-игроков или пригласите друзей)!"}, ensure_ascii=False))
                     continue
 
                 init_game(room)
@@ -924,6 +1000,30 @@ async def ws_handler(websocket):
                 next_player_turn(room)
                 await broadcast_room(room)
 
+            elif msg_type == "host_reveal_card":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "in_game":
+                    continue
+                target_id = data.get("target_id")
+                category = data.get("category")
+                target_p = room.players.get(target_id)
+                if not target_p or getattr(target_p, "is_spectator", False):
+                    continue
+                if room.round == 1 and category != "profession":
+                    await websocket.send(json.dumps({"type": "error", "message": "В 1-м раунде все обязаны открыть Профессию!"}, ensure_ascii=False))
+                    continue
+                card = target_p.hand.get(category)
+                if not card or card.get("revealed", False):
+                    continue
+                card["revealed"] = True
+                room.timer_seconds = getattr(room, "speech_timer_duration", 35)
+                room.add_log(f"👁️ [Пульт] {target_p.name} вскрыл {card.get('badge', category)}: «{card['name']}» {card.get('icon','')}")
+                if room.phase == "turns" and target_id == room.get_active_player_id():
+                    next_player_turn(room)
+                await broadcast_room(room)
+
             elif msg_type in ("start_voting", "skip_debate"):
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
@@ -933,6 +1033,7 @@ async def ws_handler(websocket):
                 room.stop_timer()
                 if room.has_voting_in_round(room.round):
                     room.phase = "voting"
+                    room.offline_votes = {}
                     for p in room.players.values():
                         p.voted_for = None
                     room.add_log(f"🗳️ Командир завершил дебаты! Тайное голосование Раунда {room.round} открыто.")
@@ -1025,6 +1126,7 @@ async def ws_handler(websocket):
                     }, ensure_ascii=False))
                     continue
 
+                target_id = data.get("target_id")
                 if getattr(room, "is_tie_revote", False) and room.tie_data:
                     tied_ids = room.tie_data.get("tied_candidate_ids", [])
                     if target_id not in tied_ids:
@@ -1034,10 +1136,9 @@ async def ws_handler(websocket):
                         }, ensure_ascii=False))
                         continue
 
-                target_id = data.get("target_id")
                 target_player = room.players.get(target_id)
-                if not target_player or target_player.is_exiled:
-                    # Cannot vote for an exiled player
+                if not target_player or target_player.is_exiled or getattr(target_player, "is_spectator", False):
+                    # Cannot vote for an exiled or spectator player
                     continue
 
                 if target_player.immunity_this_round:
@@ -1050,12 +1151,52 @@ async def ws_handler(websocket):
                 voter.voted_for = target_id
                 room.add_log(f"📝 {voter.name} заполнил тайный бюллетень.")
 
-                # Check if all eligible (non-exiled and connected) players voted
-                eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected and not getattr(p, "is_silenced", False)]
+                # Check if all eligible online players voted (do not auto-resolve if offline players exist)
+                has_offline = any(getattr(p, "is_offline", False) and not p.is_exiled for p in room.players.values())
+                eligible = [
+                    p for p in room.players.values()
+                    if not p.is_exiled and not getattr(p, "is_spectator", False)
+                    and p.is_connected and not getattr(p, "is_offline", False)
+                    and not getattr(p, "is_silenced", False)
+                ]
                 all_voted = len(eligible) > 0 and all(p.voted_for is not None for p in eligible)
-                if all_voted:
+                if not has_offline and all_voted:
                     resolve_voting(room)
 
+                await broadcast_room(room)
+
+            elif msg_type == "host_set_offline_votes":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "voting":
+                    continue
+                target_id = data.get("target_id")
+                delta = int(data.get("delta", 0))
+                target_p = room.players.get(target_id)
+                if not target_p or target_p.is_exiled or getattr(target_p, "is_spectator", False) or target_p.immunity_this_round:
+                    continue
+                if getattr(room, "is_tie_revote", False) and room.tie_data:
+                    if target_id not in room.tie_data.get("tied_candidate_ids", []):
+                        continue
+                curr = room.offline_votes.get(target_id, 0)
+                room.offline_votes[target_id] = max(0, curr + delta)
+                await broadcast_room(room)
+
+            elif msg_type == "host_direct_exile":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "voting":
+                    continue
+                target_id = data.get("target_id")
+                target_p = room.players.get(target_id)
+                if not target_p or target_p.is_exiled or getattr(target_p, "is_spectator", False) or target_p.immunity_this_round:
+                    continue
+                room.offline_votes = {target_id: 1}
+                for p in room.players.values():
+                    p.voted_for = None
+                resolve_voting(room)
                 await broadcast_room(room)
 
             elif msg_type == "end_voting_force":
@@ -1107,6 +1248,7 @@ async def ws_handler(websocket):
                     tied_names = room.tie_data.get("tied_candidate_names", [])
                     room.is_tie_revote = True
                     room.phase = "voting"
+                    room.offline_votes = {}
                     for p in room.players.values():
                         p.voted_for = None
                     names_str = ", ".join(tied_names)
@@ -1123,11 +1265,18 @@ async def ws_handler(websocket):
                 advance_round(room)
                 await broadcast_room(room)
 
-            elif msg_type == "play_special":
+            elif msg_type in ("play_special", "host_play_special"):
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
                 room = ROOMS[current_room_code]
-                player = room.players.get(current_player_id)
+                if msg_type == "host_play_special":
+                    if current_player_id != room.host_id:
+                        continue
+                    player = room.players.get(data.get("player_id"))
+                    if not player or not getattr(player, "is_offline", False):
+                        continue
+                else:
+                    player = room.players.get(current_player_id)
                 if not player or not player.special_condition or player.special_condition.get("played", False):
                     continue
 
