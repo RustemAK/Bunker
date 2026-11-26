@@ -374,22 +374,29 @@
     }
   }
 
+  let pendingWsMessages = [];
+  let wsConnectingLock = false;
+
   // --- WEBSOCKET CONNECTION & AUTO-RECONNECT ---
   function connectWebSocket() {
+    if (wsConnectingLock) return;
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     if (pingInterval) clearInterval(pingInterval);
+    wsConnectingLock = true;
 
     try {
       ws = new WebSocket(wsUrl);
     } catch (e) {
+      wsConnectingLock = false;
       if (reconnectBanner) reconnectBanner.classList.remove('hidden');
       setTimeout(connectWebSocket, 2000);
       return;
     }
 
     ws.onopen = () => {
+      wsConnectingLock = false;
       console.log('WS connected');
       if (reconnectBanner) reconnectBanner.classList.add('hidden');
       // Auto-reconnect to room if saved
@@ -399,6 +406,12 @@
           room_code: currentRoomCode,
           saved_player_id: myId
         }));
+      }
+
+      // Flush any actions clicked while WS was waking up
+      while (pendingWsMessages.length > 0 && ws.readyState === WebSocket.OPEN) {
+        const nextObj = pendingWsMessages.shift();
+        ws.send(jsonStr(nextObj));
       }
 
       // Mobile heartbeat: send ping every 15s to keep WebSocket alive on iOS/Android
@@ -420,6 +433,7 @@
     };
 
     ws.onclose = () => {
+      wsConnectingLock = false;
       console.log('WS closed, reconnecting in 2s...');
       if (reconnectBanner) reconnectBanner.classList.remove('hidden');
       if (pingInterval) clearInterval(pingInterval);
@@ -427,8 +441,21 @@
     };
 
     ws.onerror = () => {
+      wsConnectingLock = false;
       if (reconnectBanner) reconnectBanner.classList.remove('hidden');
     };
+  }
+
+  function safeSend(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(jsonStr(obj));
+      return;
+    }
+    pendingWsMessages.push(obj);
+    showToast('⏳ Подключение к серверу... Команда выполнится автоматически.');
+    if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
+      connectWebSocket();
+    }
   }
 
   function jsonStr(obj) {
@@ -464,7 +491,7 @@
     soundClick();
     const name = playerNameInput.value.trim() || 'Командир';
     const avatar = getSelectedAvatar();
-    ws.send(jsonStr({ action: 'create_room', name, avatar }));
+    safeSend({ action: 'create_room', name, avatar });
   });
 
   joinRoomBtn.addEventListener('click', () => {
@@ -479,13 +506,13 @@
       return;
     }
 
-    ws.send(jsonStr({ action: 'join_room', room_code: roomCode, name, avatar }));
+    safeSend({ action: 'join_room', room_code: roomCode, name, avatar });
   });
 
   startGameBtn.addEventListener('click', () => {
     initAudio();
     soundAlarm();
-    ws.send(jsonStr({ action: 'start_game' }));
+    safeSend({ action: 'start_game' });
   });
 
   // Tabs switching
@@ -505,6 +532,10 @@
   // --- SERVER MESSAGE DISPATCHER ---
   function handleServerMessage(msg) {
     if (msg.type === 'error') {
+      if (!gameState && msg.message && msg.message.includes('не найден')) {
+        resetToLobby();
+        return;
+      }
       alert(msg.message);
       return;
     }
