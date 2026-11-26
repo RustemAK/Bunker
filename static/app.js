@@ -1201,7 +1201,7 @@
           unplayed.forEach(({ sp, i }) => {
             const b = document.createElement('button');
             b.className = 'btn btn-amber btn-sm';
-            b.textContent = `⚡ №${i + 1}: ${sp.name}`;
+            b.textContent = `⚡ Особая карта №${i + 1}`;
             b.addEventListener('click', () => {
               initAudio(); soundClick();
               triggerSpecialCardForPlayer(player, true, i);
