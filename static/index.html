@@ -21,14 +21,25 @@
 
   <!-- Audio Toggle & Status -->
   <header class="top-nav">
-    <div class="brand">
-      <span class="hazard-icon">☢️</span>
-      <span class="brand-title">БУНКЕР <small>3.3</small></span>
+    <div class="top-nav-left">
+      <div class="brand">
+        <span class="hazard-icon">☢️</span>
+        <span class="brand-title">БУНКЕР <small>3.3</small></span>
+      </div>
+      <div id="roomBadge" class="room-badge hidden">
+        КОД: <span id="roomCodeDisplay">----</span>
+      </div>
     </div>
     <div class="top-meta">
-      <div id="roomBadge" class="room-badge hidden">
-        КОМНАТА: <span id="roomCodeDisplay">----</span>
-      </div>
+      <button id="catastropheModalBtn" class="nav-btn hidden" title="Подробнее о катастрофе">
+        <span>ℹ️</span> <span class="nav-btn-lbl">Катастрофа</span>
+      </button>
+      <button id="rulesHelpBtn" class="nav-btn" title="Как играть?">
+        <span>❓</span> <span class="nav-btn-lbl">Правила</span>
+      </button>
+      <button id="leaveRoomNavBtn" class="nav-btn text-danger hidden" title="Выйти из комнаты">
+        <span>🚪</span> <span class="nav-btn-lbl">Выйти</span>
+      </button>
       <button id="soundToggleBtn" class="icon-btn" title="Звуки терминала">🔊</button>
     </div>
   </header>
@@ -139,12 +150,44 @@
               <button class="tempo-btn" data-sec="50">☕ 50 сек (Размеренно)</button>
             </div>
           </div>
-          <p class="hint-text">⚠️ Рекомендуется от 4 до 16 игроков для полноценных дискуссий (поддерживается 2–16).</p>
-          <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
-            ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
-          </button>
+
+          <!-- Host Bot Controls for Testing & Solo Play -->
+          <div id="botControlBox" class="bot-control-box glass-panel hidden">
+            <div class="bot-control-header">
+              <strong style="color: var(--color-cyan); font-size: 0.88rem;">🤖 ТЕСТОВЫЕ БОТЫ (ДЛЯ ТЕСТА И ОДИНОЧНОЙ ИГРЫ):</strong>
+              <span class="bot-control-count" style="font-size: 0.75rem; color: var(--text-dim);">До 16 игроков</span>
+            </div>
+            <div class="bot-btn-group">
+              <button id="addOneBotBtn" class="btn btn-secondary btn-sm" type="button">
+                ➕ Добавить бота (+1)
+              </button>
+              <button id="fillBots6Btn" class="btn btn-secondary btn-sm" type="button">
+                👥 Заполнить до 6 игроков
+              </button>
+              <button id="fillBots8Btn" class="btn btn-secondary btn-sm" type="button">
+                👥 Заполнить до 8 игроков
+              </button>
+              <button id="removeBotBtn" class="btn btn-subtle text-danger btn-sm" type="button">
+                🗑️ Убрать бота (-1)
+              </button>
+            </div>
+          </div>
+          <div class="lobby-help-tip glass-panel">
+            <strong style="color: var(--color-amber);">💡 Суть игры простыми словами:</strong>
+            <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 4px;">
+              Бункер вмещает ровно половину игроков. Впереди 5 раундов: в каждом вы открываете по 1 карте и доказываете свою пользу. Со 2-го раунда начинаются тайные голосования за изгнание!
+            </p>
+          </div>
+          <div class="waiting-actions-row">
+            <button id="startGameBtn" class="btn btn-danger btn-lg hidden">
+              ☢️ ЗАПУСТИТЬ КАТАСТРОФУ И РАЗДАТЬ КАРТЫ
+            </button>
+            <button id="leaveLobbyBtn" class="btn btn-secondary btn-block">
+              🚪 ВЫЙТИ ИЗ ЛОББИ
+            </button>
+          </div>
           <div id="waitHostNotice" class="wait-notice text-amber">
-            Ожидаем, пока создатель бункера начнёт игру...
+            ⏳ Ожидаем, пока создатель бункера запустит игру...
           </div>
         </div>
       </div>
@@ -160,7 +203,7 @@
             РАУНД <span id="currentRoundDisplay" class="round-num">1</span>/5
           </div>
           <div class="capacity-badge" id="hudCapacityBadge">
-            🛡️ МЕСТ В БУНКЕРЕ: <span id="hudCapacityDisplay" class="text-amber">--</span>
+            🛡️ МЕСТ: <span id="hudCapacityDisplay" class="text-amber">--</span>
           </div>
           <div class="phase-badge" id="phaseDisplay">ФАЗА: ВСКРЫТИЕ КАРТ</div>
         </div>
@@ -180,6 +223,20 @@
             <span id="speechTimerNum">30</span>с
           </div>
         </div>
+      </div>
+
+      <!-- SMART ACTION GUIDANCE BANNER (ЧТО ДЕЛАТЬ СЕЙЧАС) -->
+      <div id="smartGuidanceBanner" class="smart-guidance-banner glass-panel">
+        <div class="guidance-main">
+          <div class="guidance-icon-box" id="guidanceIcon">💡</div>
+          <div class="guidance-content">
+            <div class="guidance-title" id="guidanceTitle">Загрузка фазы...</div>
+            <div class="guidance-desc" id="guidanceDesc">Подождите...</div>
+          </div>
+        </div>
+        <button id="guidanceActionBtn" class="btn btn-warning guidance-action-btn hidden">
+          👉 Перейти к моим картам
+        </button>
       </div>
 
       <!-- PHASE DEBATE BANNER -->
@@ -218,55 +275,40 @@
         </div>
       </div>
 
-      <!-- MAIN TABS: 1. Выжившие (Досье всех) | 2. Мои Карты | 3. Бункер и Угрозы -->
-      <nav class="game-tabs">
-
-        <button class="tab-btn active" data-tab="tabSurvivors">
-          👥 ВСЕ ВЫЖИВШИЕ (<span id="tabSurvivorsCount">0</span>)
+      <!-- ACTIVE SPEAKER BAR (VISUAL CONTROLS FOR CURRENT SPEAKER ACROSS ALL TABS) -->
+      <div id="activeSpeakerBar" class="active-speaker-bar hidden">
+        <div class="speaker-bar-main">
+          <div class="speaker-badge-row">
+            <span class="speaker-pulse">🔴</span>
+            <span class="speaker-badge-title">ВАШ ХОД</span>
+            <div class="speaker-timer-pill">
+              ⏱️ <strong id="speakerTimerVal">--</strong>с
+            </div>
+          </div>
+          <div id="speakerStatusText" class="speaker-status-message">
+            Вскройте любую карту во вкладке «Мои карты» и держите речь!
+          </div>
+        </div>
+        <button id="finishSpeechBtn" class="btn btn-warning finish-speech-btn">
+          ✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД
         </button>
-        <button class="tab-btn" data-tab="tabMyDeck">
-          🗂️ МОИ КАРТЫ <span id="myDeckNotice" class="badge-dot hidden"></span>
+      </div>
+
+      <!-- MAIN TABS: 1. Мои Карты | 2. Все Выжившие | 3. Бункер и Угрозы -->
+      <nav class="game-tabs">
+        <button class="tab-btn active" data-tab="tabMyDeck">
+          <span>🗂️</span> <span class="tab-label">Мои карты</span> <span id="myDeckNotice" class="badge-dot hidden"></span>
+        </button>
+        <button class="tab-btn" data-tab="tabSurvivors">
+          <span>👥</span> <span class="tab-label">Выжившие</span> (<span id="tabSurvivorsCount">0</span>)
         </button>
         <button class="tab-btn" data-tab="tabBunker">
-          📦 БУНКЕР И УГРОЗЫ (<span id="tabBunkerRevealed">1/5</span>)
+          <span>📦</span> <span class="tab-label">Бункер</span> (<span id="tabBunkerRevealed">1/5</span>)
         </button>
       </nav>
 
-      <!-- TAB 1: ALL SURVIVORS (GRID + TAP TO VIEW DOSSIER) -->
-      <div id="tabSurvivors" class="tab-content active">
-        <!-- Active Speaker Bar (Finish Speech) -->
-        <div id="activeSpeakerBar" class="active-speaker-bar hidden">
-          <div class="speaker-status-box">
-            <span class="speaker-pulse">🔴</span>
-            <span>ИДЁТ ВАША РЕЧЬ! Время на выступление: <strong id="speakerTimerVal">--</strong>с</span>
-          </div>
-          <button id="finishSpeechBtn" class="btn btn-warning">
-            ✅ ЗАВЕРШИТЬ РЕЧЬ И ПЕРЕДАТЬ ХОД
-          </button>
-        </div>
-
-        <!-- Survivors Filter Bar -->
-        <div class="survivors-filter-bar">
-          <button class="filter-pill active" data-filter="all" id="filterAllBtn">👥 Все (<span id="filterAllCount">0</span>)</button>
-          <button class="filter-pill" data-filter="alive" id="filterAliveBtn">🛡️ В бункере (<span id="filterAliveCount">0</span>)</button>
-          <button class="filter-pill" data-filter="exiled" id="filterExiledBtn">❌ Изгнаны (<span id="filterExiledCount">0</span>)</button>
-        </div>
-
-        <div class="tab-hint">
-          💡 <strong>Нажмите на любого игрока</strong>, чтобы открыть его детальное досье со всеми вскрытыми характеристиками.
-        </div>
-        <div id="survivorsGrid" class="survivors-grid">
-          <!-- Dynamically populated with player cards -->
-        </div>
-
-        <!-- Host Emergency Controls -->
-        <div id="hostControlsRow" class="host-controls-row hidden">
-          <button id="hostStartVotingBtn" class="btn btn-warning">🗳️ Объявить тайное голосование</button>
-        </div>
-      </div>
-
-      <!-- TAB 2: MY DECK & SECRET CARDS -->
-      <div id="tabMyDeck" class="tab-content">
+      <!-- TAB 1: MY DECK & SECRET CARDS (PRIMARY & ACTIVE BY DEFAULT) -->
+      <div id="tabMyDeck" class="tab-content active">
         <div id="spectatorDeckNotice" class="glass-panel spectator-notice hidden" style="padding: 18px; margin-bottom: 16px; border-color: var(--color-emerald);">
           <h3 style="color: var(--color-emerald-light); margin-bottom: 6px;">🎛️ РЕЖИМ: ТОЛЬКО ПУЛЬТ ВЕДУЩЕГО</h3>
           <p class="hint-text" style="margin-bottom: 0;">У вас нет личных карт. Вы управляете партией, раздаёте карты игрокам и вскрываете их со своего телефона.</p>
@@ -274,17 +316,13 @@
 
         <div id="myPersonalDeckWrapper">
           <div class="my-deck-header">
-            <div>
-              <h3>ЛИЧНЫЕ КАРТЫ ВЫЖИВШЕГО</h3>
-              <p class="hint-text">Скрытые карты видите только вы. Вскрывайте их в свой ход для аргументации.</p>
-            </div>
             <div id="myTurnAlert" class="my-turn-alert hidden">
               🚨 ВАШ ХОД! Выберите карту для вскрытия
             </div>
           </div>
 
-          <div id="myCardsGrid" class="cards-grid">
-            <!-- 6 player cards generated here -->
+          <div id="myCardsGrid" class="cards-list">
+            <!-- 6 player cards generated here as a compact list -->
           </div>
 
           <!-- Special Condition Card -->
@@ -310,6 +348,25 @@
           <div id="offlineDistList" class="offline-dist-list">
             <!-- Populated dynamically -->
           </div>
+        </div>
+      </div>
+
+      <!-- TAB 2: ALL SURVIVORS (COMPACT LIST + TAP TO VIEW DOSSIER) -->
+      <div id="tabSurvivors" class="tab-content">
+        <!-- Survivors Filter Bar -->
+        <div class="survivors-filter-bar">
+          <button class="filter-pill active" data-filter="all" id="filterAllBtn">👥 Все (<span id="filterAllCount">0</span>)</button>
+          <button class="filter-pill" data-filter="alive" id="filterAliveBtn">🛡️ В бункере (<span id="filterAliveCount">0</span>)</button>
+          <button class="filter-pill" data-filter="exiled" id="filterExiledBtn">❌ Изгнаны (<span id="filterExiledCount">0</span>)</button>
+        </div>
+
+        <div id="survivorsGrid" class="survivors-list">
+          <!-- Dynamically populated with compact survivor list items -->
+        </div>
+
+        <!-- Host Emergency Controls -->
+        <div id="hostControlsRow" class="host-controls-row hidden">
+          <button id="hostStartVotingBtn" class="btn btn-warning">🗳️ Объявить тайное голосование</button>
         </div>
       </div>
 
@@ -644,6 +701,191 @@
       <div class="modal-footer">
         <button id="confirmSpecialTargetBtn" class="btn btn-primary btn-block" disabled>
           ⚡ ПРИМЕНИТЬ КОЗЫРЬ
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 6: RULES MODAL (СПРАВОЧНИК ПРАВИЛ) -->
+  <div id="rulesModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 540px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge">📖 ПАМЯТКА ВЫЖИВШЕГО</div>
+          <h2>Как играть в «Бункер 3.3»</h2>
+        </div>
+        <button id="closeRulesModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+      <div class="rules-modal-body" style="display: flex; flex-direction: column; gap: 12px; margin: 16px 0; font-size: 0.9rem;">
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-emerald);">
+          <strong style="color: var(--color-emerald-light);">🛡️ 1. Главная цель:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            Попасть в число счастливчиков, которые войдут в бункер. Бункер вмещает <strong>ровно половину</strong> игроков (например, 4 из 8).
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-amber);">
+          <strong style="color: var(--color-amber);">🎤 2. Ход раунда (всего 5 раундов):</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            В каждом раунде игроки по очереди открывают 1 карту из руки и кратко объясняют, как эта черта поможет колонии выжить при данной Катастрофе. В 1-м раунде все открывают <strong>Профессию</strong>.
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-danger);">
+          <strong style="color: var(--color-danger-light);">⚖️ 3. Дебаты и тайное голосование:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            Когда все открыли карты раунда, начинаются дебаты. Затем все тайно голосуют, кого изгнать на поверхность. Набравший больше всех голосов изгоняется и раскрывает все оставшиеся карты! <em>(В 1-м раунде изгнания нет — это знакомство).</em>
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid var(--color-cyan);">
+          <strong style="color: var(--color-cyan);">⚡ 4. Особое условие (Козырь):</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            У каждого игрока есть 1 тайная спецкарта (иммунитет от изгнания, обмен багажом, проверка на детекторе и т.д.). Разыграть её можно 1 раз за игру во вкладке «Мои карты».
+          </p>
+        </div>
+        <div class="rule-item glass-panel" style="padding: 12px 14px; border-left: 3px solid #a855f7;">
+          <strong style="color: #c084fc;">🧠 5. Финал и бортовой ИИ:</strong>
+          <p style="color: var(--text-muted); margin-top: 4px;">
+            В конце 5-го раунда выжившие входят в бункер, вскрывают 6-ю скрытую карту («Факт»), а бортовой ИИ рассчитывает шансы группы и рассказывает хронику 1 года изоляции!
+          </p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="closeRulesModalConfirmBtn" class="btn btn-primary btn-block">
+          ПОНЯТНО, В БОЙ! 🚀
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 7: CATASTROPHE BRIEFING MODAL (АВАРИЙНЫЙ БРИФИНГ КАТАСТРОФЫ) -->
+  <div id="catastropheBriefingModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 600px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge" style="background: rgba(239, 68, 68, 0.2); border-color: var(--color-danger); color: var(--color-danger-light);">
+            🚨 ЭКСТРЕННЫЙ БРИФИНГ КАТАСТРОФЫ
+          </div>
+          <h2 id="briefingCatTitle" style="color: #fff; margin-top: 6px;">Загрузка катастрофы...</h2>
+        </div>
+        <button id="closeBriefingModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+
+      <div class="briefing-modal-body" style="display: flex; flex-direction: column; gap: 14px; margin: 16px 0;">
+        <!-- Catastrophe detail card -->
+        <div class="cat-brief-card glass-panel" style="padding: 16px; border-left: 4px solid var(--color-danger);">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+            <span id="briefingCatIcon" style="font-size: 2.2rem;">🌋</span>
+            <div>
+              <span id="briefingCatBadge" class="hazard-badge" style="font-size: 0.75rem;">ГЛОБАЛЬНЫЙ КАТАКЛИЗМ</span>
+              <h3 id="briefingCatName" style="color: #fff; font-size: 1.2rem;">Название</h3>
+            </div>
+          </div>
+          <p id="briefingCatDesc" style="color: var(--text-main); font-size: 0.95rem; line-height: 1.45;">
+            Описание катастрофы...
+          </p>
+          <div style="margin-top: 10px; padding: 10px; background: rgba(245, 158, 11, 0.12); border-radius: var(--radius-sm); border-left: 3px solid var(--color-amber);">
+            <strong style="color: var(--color-amber); font-size: 0.85rem;">💡 СОВЕТ ПО ВЫЖИВАНИЮ:</strong>
+            <p id="briefingCatTip" style="font-size: 0.85rem; color: #fff; margin-top: 2px;">Какие навыки нужны...</p>
+          </div>
+        </div>
+
+        <!-- Initial Bunker and Threat slots -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+          <div class="glass-panel" style="padding: 12px; border-left: 3px solid var(--color-cyan);">
+            <div style="font-size: 0.75rem; color: var(--color-cyan); font-weight: 700;">📦 ОТСЕК БУНКЕРА (РАУНД 1)</div>
+            <strong id="briefingBunkerName" style="display: block; color: #fff; font-size: 0.9rem; margin-top: 4px;">Склад припасов</strong>
+            <small id="briefingBunkerDesc" style="color: var(--text-muted); font-size: 0.75rem;">Описание отсека...</small>
+          </div>
+          <div class="glass-panel" style="padding: 12px; border-left: 3px solid var(--color-danger);">
+            <div style="font-size: 0.75rem; color: var(--color-danger); font-weight: 700;">⚠️ УГРОЗА БУНКЕРА (РАУНД 1)</div>
+            <strong id="briefingThreatName" style="display: block; color: #fff; font-size: 0.9rem; margin-top: 4px;">Прорыв шлюза</strong>
+            <small id="briefingThreatDesc" style="color: var(--text-muted); font-size: 0.75rem;">Описание угрозы...</small>
+          </div>
+        </div>
+
+        <!-- Key Rule Notice -->
+        <div class="glass-panel" style="padding: 12px 14px; background: rgba(16, 185, 129, 0.1); border-left: 3px solid var(--color-emerald);">
+          <div style="font-size: 0.85rem; color: #fff;">
+            🛡️ <strong>Вместимость бункера:</strong> спастись смогут ровно <strong id="briefingCapacityNum" class="text-amber">--</strong> человек.<br>
+            🎤 <strong>Раунд 1 — Знакомство:</strong> каждый игрок по очереди вскроет Профессию и докажет свою ценность. <em>В 1-м раунде никто не изгоняется!</em>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="briefingCountdownBox" style="text-align: center; color: var(--color-amber); font-family: var(--font-mono); font-size: 0.9rem;">
+          ⏱️ До начала Раунда 1: <strong id="briefingTimerNum">25</strong>с
+        </div>
+        <button id="briefingReadyBtn" class="btn btn-primary btn-block">
+          ✅ Я ОЗНАКОМИЛСЯ, ГОТОВ К ОТБОРУ
+        </button>
+        <button id="briefingSkipHostBtn" class="btn btn-danger btn-block hidden">
+          🚀 НАЧАТЬ РАУНД 1 ПРЯМО СЕЙЧАС (ХОСТ)
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 8: ROUND BUNKER CONDITIONS BRIEFING (ОТКРЫТИЕ ОТСЕКА И УГРОЗЫ В НОВОМ РАУНДЕ) -->
+  <div id="roundBunkerBriefingModal" class="modal-overlay hidden">
+    <div class="modal-card glass-panel" style="max-width: 580px;">
+      <div class="modal-header">
+        <div>
+          <div class="hazard-badge" style="background: rgba(6, 182, 212, 0.2); border-color: var(--color-cyan); color: var(--color-cyan);">
+            🏢 ИССЛЕДОВАНЫ НОВЫЕ УСЛОВИЯ БУНКЕРА
+          </div>
+          <h2 id="roundBriefTitle" style="color: #fff; margin-top: 6px;">Раунд 2: Отсек и Угроза</h2>
+        </div>
+        <button id="closeRoundBriefModalBtn" class="btn-subtle" style="font-size: 1.5rem;">✕</button>
+      </div>
+
+      <div class="briefing-modal-body" style="display: flex; flex-direction: column; gap: 14px; margin: 16px 0;">
+        <!-- Bunker Room and Threat Grid -->
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div class="glass-panel" style="padding: 14px; border-left: 4px solid var(--color-cyan); background: rgba(6, 182, 212, 0.08);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.6rem;">📦</span>
+              <div>
+                <span style="font-size: 0.72rem; color: var(--color-cyan); font-weight: 700; text-transform: uppercase;">НОВЫЙ ОТСЕК БУНКЕРА</span>
+                <h3 id="roundBriefBunkerName" style="color: #fff; font-size: 1.1rem; margin: 0;">Склад припасов</h3>
+              </div>
+            </div>
+            <p id="roundBriefBunkerDesc" style="color: var(--text-main); font-size: 0.88rem; margin-top: 6px; line-height: 1.4;">
+              Описание открытого отсека...
+            </p>
+          </div>
+
+          <div class="glass-panel" style="padding: 14px; border-left: 4px solid var(--color-danger); background: rgba(239, 68, 68, 0.08);">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.6rem;">⚠️</span>
+              <div>
+                <span style="font-size: 0.72rem; color: var(--color-danger); font-weight: 700; text-transform: uppercase;">ОБНАРУЖЕНА УГРОЗА БУНКЕРА</span>
+                <h3 id="roundBriefThreatName" style="color: #fff; font-size: 1.1rem; margin: 0;">Прорыв шлюза</h3>
+              </div>
+            </div>
+            <p id="roundBriefThreatDesc" style="color: var(--text-main); font-size: 0.88rem; margin-top: 6px; line-height: 1.4;">
+              Описание угрозы...
+            </p>
+          </div>
+        </div>
+
+        <!-- Strategy Advice -->
+        <div class="glass-panel" style="padding: 10px 14px; border-left: 3px solid var(--color-amber); background: rgba(245, 158, 11, 0.08);">
+          <strong style="color: var(--color-amber); font-size: 0.85rem;">💡 СОВЕТ НА ЭТОТ РАУНД:</strong>
+          <p style="font-size: 0.82rem; color: #fff; margin-top: 3px; line-height: 1.35;">
+            Вы свободны в выборе! Вскройте ту карту, которая лучше всего защитит вас перед лицом открытой угрозы.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="display: flex; flex-direction: column; gap: 8px;">
+        <div id="roundBriefCountdownBox" style="text-align: center; color: var(--color-amber); font-family: var(--font-mono); font-size: 0.9rem;">
+          ⏱️ Время на общее обсуждение условий: <strong id="roundBriefTimerNum">60</strong>с
+        </div>
+        <button id="roundBriefReadyBtn" class="btn btn-primary btn-block">
+          👍 УСЛОВИЯ ПОНЯТНЫ, К БОЮ!
+        </button>
+        <button id="roundBriefSkipHostBtn" class="btn btn-danger btn-block hidden">
+          🚀 ЗАВЕРШИТЬ ОБСУЖДЕНИЕ И НАЧАТЬ РЕЧИ (ХОСТ)
         </button>
       </div>
     </div>

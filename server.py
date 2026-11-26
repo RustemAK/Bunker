@@ -7,6 +7,7 @@ import random
 import socket
 import string
 import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -51,11 +52,12 @@ def generate_room_code():
             return code
 
 class Player:
-    def __init__(self, player_id, name, avatar, ws=None, is_offline=False):
+    def __init__(self, player_id, name, avatar, ws=None, is_bot=False, is_offline=False):
         self.id = player_id
         self.name = name
         self.avatar = avatar
         self.ws = ws
+        self.is_bot = is_bot
         self.is_offline = is_offline
         self.is_spectator = False
         self.is_connected = True
@@ -67,6 +69,181 @@ class Player:
         self.triple_vote = False
         self.retaliation_active = False
         self.is_silenced = False
+
+# ================= TEST BOTS SYSTEM =================
+BOT_NAMES = [
+    ("Андрей 🤖", "👨‍🔬"),
+    ("Алиса 🤖", "👩‍⚕️"),
+    ("Виктор 🤖", "👨‍🏭"),
+    ("Елена 🤖", "👩‍🏫"),
+    ("Максим 🤖", "👨‍🌾"),
+    ("Дарья 🤖", "👩‍🎨"),
+    ("Роман 🤖", "👨‍🔧"),
+    ("София 🤖", "👩‍🚀"),
+    ("Иван 🤖", "👨‍🍳"),
+    ("Полина 🤖", "👩‍🚒"),
+    ("Кирилл 🤖", "👨‍💻"),
+    ("Ольга 🤖", "👩‍🔬"),
+    ("Артем 🤖", "👮‍♂️"),
+    ("Наталья 🤖", "👷‍♀️"),
+    ("Денис 🤖", "🕵️‍♂️"),
+    ("Анна 🤖", "🧕"),
+]
+
+def get_bot_speech_phrase(category, card, cat_name):
+    card_name = card.get("name", "")
+    phrases = {
+        "profession": [
+            f"Как {card_name}, я смогу поддерживать и восстанавливать критические системы бункера при катастрофе «{cat_name}»!",
+            f"Моя специальность ({card_name}) жизненно необходима команде для выживания и ремонта оборудования.",
+            f"Без навыков специалиста «{card_name}» бункер не продержится долго в условиях катастрофы!"
+        ],
+        "biology": [
+            f"Мои биологические данные ({card_name}) гарантируют выносливость и ценный репродуктивный потенциал для колонии.",
+            f"Мой организм в отличной форме ({card_name}), я выдержу любые физические нагрузки в убежище."
+        ],
+        "health": [
+            f"Моё здоровье: «{card_name}». Я не буду обузой для медпункта бункера и готов к автономной жизни.",
+            f"Показатели здоровья: {card_name}. Это позволит мне эффективно работать на благо убежища."
+        ],
+        "hobby": [
+            f"Моё увлечение ({card_name}) — это не просто хобби, а ценный прикладной навык для колонии!",
+            f"Благодаря хобби «{card_name}» я помогу решать нестандартные бытовые задачи в изоляции."
+        ],
+        "luggage": [
+            f"В моём рюкзаке «{card_name}» — этот предмет спасёт нас в критический момент угрозы!",
+            f"Я принёс ценный ресурс: {card_name}. Это защитит запасы убежища."
+        ],
+        "fact": [
+            f"Факт из биографии: {card_name}. Мой уникальный опыт поможет колонии пережить кризис.",
+            f"Моя тайна: {card_name}. Это доказывает мою стойкость и готовность бороться за жизнь."
+        ]
+    }
+    opts = phrases.get(category, [f"Моя характеристика «{card_name}» укрепит позиции бункера!"])
+    return random.choice(opts)
+
+def add_bot_to_room(room):
+    if len(room.players) >= 16:
+        return None
+    used_names = {p.name for p in room.players.values()}
+    available = [item for item in BOT_NAMES if item[0] not in used_names]
+    if available:
+        b_name, b_avatar = random.choice(available)
+    else:
+        idx = len(room.players) + 1
+        b_name, b_avatar = f"Бот #{idx} 🤖", "🤖"
+    
+    bot_id = f"bot_{uuid.uuid4().hex[:6]}"
+    p = Player(bot_id, b_name, b_avatar, ws=None, is_bot=True)
+    room.players[bot_id] = p
+    if bot_id not in room.turn_order:
+        room.turn_order.append(bot_id)
+    return p
+
+def remove_last_bot(room):
+    bot_keys = [pid for pid, p in room.players.items() if getattr(p, "is_bot", False)]
+    if bot_keys:
+        last_id = bot_keys[-1]
+        p = room.players.pop(last_id)
+        if last_id in room.turn_order:
+            room.turn_order.remove(last_id)
+        return p
+    return None
+
+async def run_bot_turn(room, bot_id):
+    try:
+        # Realistic brief pause before bot reveals card
+        await asyncio.sleep(1.8)
+        if room.status != "in_game" or room.phase != "turns" or room.get_active_player_id() != bot_id:
+            return
+        p = room.players.get(bot_id)
+        if not p or p.is_exiled:
+            return
+
+        curr_target = room.round
+        rev_count = sum(1 for c in p.hand.values() if c.get("revealed", False))
+        if rev_count < curr_target:
+            if room.round == 1 and not p.hand.get("profession", {}).get("revealed", False):
+                cat = "profession"
+            else:
+                unrev = [c for c, card in p.hand.items() if not card.get("revealed", False)]
+                cat = random.choice(unrev) if unrev else None
+            
+            if cat:
+                card = p.hand[cat]
+                card["revealed"] = True
+                room.timer_seconds = getattr(room, "speech_timer_duration", 35)
+                room.add_log(f"👁️ {p.name} вскрыл {card.get('badge', cat)}: «{card['name']}» {card.get('icon','')}")
+                phrase = get_bot_speech_phrase(cat, card, (room.catastrophe or {}).get("name", "Катастрофа"))
+                room.add_log(f"🎤 {p.name}: «{phrase}»")
+                await broadcast_timer_tick(room)
+                await broadcast_room(room)
+
+        # Brief pause so human players can read the bot's speech and card
+        await asyncio.sleep(2.5)
+        if room.status != "in_game" or room.phase != "turns" or room.get_active_player_id() != bot_id:
+            return
+
+        room.add_log(f"🎤 {p.name} завершил речь и передал ход.")
+        next_player_turn(room)
+        await broadcast_room(room)
+        await trigger_bot_actions(room)
+    except Exception as e:
+        print(f"[Bot turn error: {e}]")
+
+async def run_bot_voting(room):
+    try:
+        await asyncio.sleep(2.0)
+        if room.status != "in_game" or room.phase != "voting":
+            return
+
+        alive_players = [p for p in room.players.values() if not p.is_exiled]
+        is_tie_revote = getattr(room, "is_tie_revote", False)
+        tied_ids = (room.tie_data or {}).get("tied_candidate_ids", []) if is_tie_revote else []
+
+        any_vote_cast = False
+        for bot_id, bot in list(room.players.items()):
+            if not getattr(bot, "is_bot", False) or bot.is_exiled or bot.voted_for is not None:
+                continue
+            if getattr(bot, "is_silenced", False):
+                continue
+
+            if is_tie_revote and tied_ids:
+                candidates = [p for p in alive_players if p.id in tied_ids and p.id != bot.id and not p.immunity_this_round]
+            else:
+                candidates = [p for p in alive_players if p.id != bot.id and not p.immunity_this_round]
+
+            if not candidates:
+                candidates = [p for p in alive_players if p.id != bot.id]
+
+            if candidates:
+                chosen = random.choice(candidates)
+                bot.voted_for = chosen.id
+                room.add_log(f"📝 {bot.name} заполнил тайный бюллетень.")
+                any_vote_cast = True
+
+        if any_vote_cast:
+            eligible = [p for p in room.players.values() if not p.is_exiled and p.is_connected and not getattr(p, "is_silenced", False)]
+            all_voted = len(eligible) > 0 and all(p.voted_for is not None for p in eligible)
+            if all_voted:
+                resolve_voting(room)
+            await broadcast_room(room)
+    except Exception as e:
+        print(f"[Bot voting error: {e}]")
+
+async def trigger_bot_actions(room):
+    if getattr(room, "status", None) != "in_game":
+        return
+
+    if room.phase == "turns":
+        active_pid = room.get_active_player_id()
+        if active_pid and active_pid in room.players:
+            p = room.players[active_pid]
+            if getattr(p, "is_bot", False) and not p.is_exiled:
+                asyncio.create_task(run_bot_turn(room, active_pid))
+
+    elif room.phase == "voting":
+        asyncio.create_task(run_bot_voting(room))
 
 # Official Bunker 3.3 Exile Schedule per Player Count (N: {round: exiles})
 EXILE_SCHEDULE = {
@@ -169,7 +346,35 @@ class Room:
                     self.timer_seconds -= 1
                     await broadcast_timer_tick(self)
 
-            if auto_phase_on_zero == "voting" and self.phase == "debate":
+            if auto_phase_on_zero == "start_round_1" and self.phase == "briefing":
+                self.phase = "turns"
+                active_p = self.players[self.get_active_player_id()]
+                self.add_log(f"🎤 Брифинг окончен! Раунд 1: первым выступает {active_p.name} — вскройте Профессию!")
+                self.start_timer(getattr(self, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
+                await broadcast_room(self)
+                await trigger_bot_actions(self)
+
+            elif auto_phase_on_zero == "next_turn" and self.phase == "turns":
+                curr_pid = self.get_active_player_id()
+                if curr_pid and curr_pid in self.players:
+                    p = self.players[curr_pid]
+                    curr_target = self.round
+                    rev_count = sum(1 for c in p.hand.values() if c.get("revealed", False))
+                    if rev_count < curr_target:
+                        if self.round == 1 and not p.hand.get("profession", {}).get("revealed", False):
+                            p.hand["profession"]["revealed"] = True
+                            self.add_log(f"⏰ Время вышло! У игрока {p.name} автоматически вскрыта Профессия: «{p.hand['profession']['name']}»")
+                        else:
+                            unrev = [c for c in p.hand.values() if not c.get("revealed", False)]
+                            if unrev:
+                                unrev[0]["revealed"] = True
+                                self.add_log(f"⏰ Время вышло! У игрока {p.name} автоматически вскрыта карта: «{unrev[0]['name']}»")
+                    self.add_log(f"⏱️ Время на речь игрока {p.name} истекло. Переход хода!")
+                next_player_turn(self)
+                await broadcast_room(self)
+                await trigger_bot_actions(self)
+
+            elif auto_phase_on_zero in ("voting", "round_advance") and self.phase == "debate":
                 if self.has_voting_in_round(self.round):
                     self.phase = "voting"
                     self.offline_votes = {}
@@ -180,6 +385,12 @@ class Room:
                     self.add_log(f"⚖️ Время обсуждения Раунда {self.round} истекло. В этом раунде никто не изгоняется — переход к Раунду {self.round + 1}!")
                     advance_round(self)
                 await broadcast_room(self)
+                await trigger_bot_actions(self)
+
+            elif auto_phase_on_zero == "start_round_turns" and self.phase == "bunker_round_briefing":
+                start_round_speeches(self)
+                await broadcast_room(self)
+                await trigger_bot_actions(self)
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -237,6 +448,7 @@ class Room:
                 "is_host": (p.id == self.host_id),
                 "is_offline": getattr(p, "is_offline", False),
                 "is_spectator": getattr(p, "is_spectator", False),
+                "is_bot": getattr(p, "is_bot", False),
                 "is_connected": p.is_connected,
                 "is_exiled": p.is_exiled,
                 "immunity_this_round": p.immunity_this_round,
@@ -399,11 +611,12 @@ def init_game(room):
         p.special_condition = {**spc_deck[i], "played": False}
 
     bunker_capacity = room.get_bunker_capacity()
+    room.phase = "briefing"
     room.add_log(f"🚨 ТРЕВОГА! Началась катастрофа: «{room.catastrophe['name']}»")
     room.add_log(f"🛡️ Вместимость бункера: {bunker_capacity} из {len(p_keys)} выживших (половина участников).")
     room.add_log(f"📦 Раунд 1: открыт отсек Бункера «{bunker_deck[0]['name']}» и Угроза «{threat_deck[0]['name']}»")
-    room.add_log(f"🎤 Очередь игрока {room.players[room.get_active_player_id()].name} — в 1-м раунде вскройте Профессию! (В 1-м раунде изгнания нет)")
-    room.start_timer(getattr(room, "speech_timer_duration", 35))
+    room.add_log("📖 Брифинг катастрофы: ознакомьтесь с условиями выживания перед началом отбора!")
+    room.start_timer(60, auto_phase_on_zero="start_round_1")
 
 def next_player_turn(room):
     non_exiled = [pid for pid in room.turn_order if not room.players[pid].is_exiled]
@@ -440,7 +653,7 @@ def next_player_turn(room):
                 break
         active_p = room.players[room.get_active_player_id()]
         room.add_log(f"👉 Ход переходит к: {active_p.name}. Выберите карту для вскрытия!")
-        room.start_timer(getattr(room, "speech_timer_duration", 35))
+        room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
 
 
 def resolve_voting(room):
@@ -590,13 +803,14 @@ def advance_round(room):
         room.add_log("🏁 Раунд 5 завершён! Выжившие входят в Бункер. Начинается ФИНАЛ!")
     else:
         room.round += 1
-        room.phase = "turns"
+        room.phase = "bunker_round_briefing"
         # Reveal new Bunker + Threat pair
         if room.round - 1 < len(room.bunker_threat_pairs):
             room.bunker_threat_pairs[room.round - 1]["revealed"] = True
             b_name = room.bunker_threat_pairs[room.round - 1]["bunker"]["name"]
             t_name = room.bunker_threat_pairs[room.round - 1]["threat"]["name"]
-            room.add_log(f"📦 Раунд {room.round}: Вскрыты отсек «{b_name}» и Угроза «{t_name}»!")
+            room.add_log(f"🏢 РАУНД {room.round}: Исследован отсек «{b_name}» и Угроза «{t_name}»!")
+            room.add_log("💬 60 секунд на общее обсуждение условий бункера перед началом выступлений!")
 
         # Reset votes and round-specific buffs
         for p in room.players.values():
@@ -615,9 +829,19 @@ def advance_round(room):
         while room.players[room.get_active_player_id()].is_exiled:
             room.active_turn_index = (room.active_turn_index + 1) % len(room.turn_order)
 
-        active_p = room.players[room.get_active_player_id()]
-        room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
-        room.start_timer(getattr(room, "speech_timer_duration", 35))
+        room.start_timer(60, auto_phase_on_zero="start_round_turns")
+
+def start_round_speeches(room):
+    if room.phase != "bunker_round_briefing":
+        return
+    room.stop_timer()
+    room.phase = "turns"
+    while room.players[room.get_active_player_id()].is_exiled:
+        room.active_turn_index = (room.active_turn_index + 1) % len(room.turn_order)
+
+    active_p = room.players[room.get_active_player_id()]
+    room.add_log(f"🎤 Раунд {room.round}: Первым карту открывает {active_p.name}.")
+    room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
 
 def procedural_ai_analysis(cat, survivors, exiled, revealed_bunkers, revealed_threats):
 
@@ -953,6 +1177,126 @@ async def ws_handler(websocket):
                 room.add_log(f"🎛️ Режим создателя изменён: {mode_label}.")
                 await broadcast_room(room)
 
+            elif msg_type == "leave_room":
+                if not current_room_code or current_room_code not in ROOMS:
+                    current_room_code = None
+                    current_player_id = None
+                    await websocket.send(json.dumps({"type": "room_left"}, ensure_ascii=False))
+                    continue
+
+                room = ROOMS[current_room_code]
+                leaving_player_id = current_player_id
+                leaving_player = room.players.get(leaving_player_id)
+                leaving_name = leaving_player.name if leaving_player else "Игрок"
+
+                if room.status == "lobby":
+                    if leaving_player_id in room.players:
+                        del room.players[leaving_player_id]
+                    if leaving_player_id in room.turn_order:
+                        room.turn_order.remove(leaving_player_id)
+
+                    if not room.players:
+                        del ROOMS[current_room_code]
+                    else:
+                        if room.host_id == leaving_player_id:
+                            room.host_id = next(iter(room.players.keys()))
+                            new_host = room.players[room.host_id]
+                            room.add_log(f"👑 {new_host.name} стал новым командиром бункера.")
+                        room.add_log(f"🚪 {leaving_name} покинул шлюз бункера.")
+                        await broadcast_room(room)
+                else:
+                    if leaving_player:
+                        leaving_player.is_connected = False
+                        leaving_player.is_exiled = True
+                        for c in leaving_player.hand.values():
+                            c["revealed"] = True
+                        room.add_log(f"🚪 {leaving_name} покинул бункер.")
+
+                        if room.get_active_player_id() == leaving_player_id and room.phase == "turns":
+                            next_player_turn(room)
+
+                        if room.phase == "voting":
+                            has_offline = any(getattr(p, "is_offline", False) and not p.is_exiled for p in room.players.values())
+                            eligible = [
+                                p for p in room.players.values()
+                                if not p.is_exiled and not getattr(p, "is_spectator", False)
+                                and p.is_connected and not getattr(p, "is_offline", False)
+                                and not getattr(p, "is_silenced", False)
+                            ]
+                            if not has_offline and len(eligible) > 0 and all(p.voted_for is not None for p in eligible):
+                                resolve_voting(room)
+
+                        await broadcast_room(room)
+
+                current_room_code = None
+                current_player_id = None
+                await websocket.send(json.dumps({"type": "room_left"}, ensure_ascii=False))
+
+            elif msg_type == "kick_player":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                target_id = data.get("target_id")
+                if target_id and target_id in room.players and target_id != room.host_id:
+                    kicked_p = room.players[target_id]
+                    if kicked_p.ws:
+                        try:
+                            await kicked_p.ws.send(json.dumps({
+                                "type": "kicked",
+                                "message": "Вы были исключены из лобби командиром."
+                            }, ensure_ascii=False))
+                        except Exception:
+                            pass
+                    del room.players[target_id]
+                    if target_id in room.turn_order:
+                        room.turn_order.remove(target_id)
+                    room.add_log(f"🚫 {kicked_p.name} исключён из лобби командиром.")
+                    await broadcast_room(room)
+
+            elif msg_type == "add_bot":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                if len(room.players) >= 16:
+                    await websocket.send(json.dumps({"type": "error", "message": "Достигнут максимум игроков (16)!"}, ensure_ascii=False))
+                    continue
+                new_bot = add_bot_to_room(room)
+                if new_bot:
+                    room.add_log(f"🤖 В убежище добавлен {new_bot.name}.")
+                    await broadcast_room(room)
+
+            elif msg_type == "remove_bot":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                removed = remove_last_bot(room)
+                if removed:
+                    room.add_log(f"🗑️ Из убежища удалён {removed.name}.")
+                    await broadcast_room(room)
+
+            elif msg_type == "fill_bots":
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.status != "lobby":
+                    continue
+                target = min(16, max(2, int(data.get("target", 6))))
+                added = 0
+                while len(room.players) < target:
+                    nb = add_bot_to_room(room)
+                    if not nb:
+                        break
+                    added += 1
+                if added > 0:
+                    room.add_log(f"🤖 В убежище добавлено {added} ботов (всего выживших: {len(room.players)}).")
+                    await broadcast_room(room)
+
             elif msg_type == "start_game":
                 if not current_room_code or current_room_code not in ROOMS:
                     continue
@@ -995,9 +1339,8 @@ async def ws_handler(websocket):
                 card["revealed"] = True
                 room.timer_seconds = getattr(room, "speech_timer_duration", 35)
                 room.add_log(f"👁️ {player.name} вскрыл {card.get('badge', category)}: «{card['name']}» {card.get('icon','')}")
-
-                # Automatically or manually progress turn
-                next_player_turn(room)
+                room.add_log(f"🎤 {player.name} держит речь. Выскажитесь и нажмите «Завершить речь», чтобы передать ход!")
+                await broadcast_timer_tick(room)
                 await broadcast_room(room)
 
             elif msg_type == "host_reveal_card":
@@ -1023,6 +1366,31 @@ async def ws_handler(websocket):
                 if room.phase == "turns" and target_id == room.get_active_player_id():
                     next_player_turn(room)
                 await broadcast_room(room)
+                await trigger_bot_actions(room)
+
+            elif msg_type in ("skip_briefing", "start_round_1"):
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "briefing":
+                    continue
+                room.stop_timer()
+                room.phase = "turns"
+                active_p = room.players[room.get_active_player_id()]
+                room.add_log(f"🎤 Командир завершил брифинг. Раунд 1: первым выступает {active_p.name} — вскройте Профессию!")
+                room.start_timer(getattr(room, "speech_timer_duration", 35), auto_phase_on_zero="next_turn")
+                await broadcast_room(room)
+                await trigger_bot_actions(room)
+
+            elif msg_type in ("skip_round_briefing", "start_round_turns"):
+                if not current_room_code or current_room_code not in ROOMS:
+                    continue
+                room = ROOMS[current_room_code]
+                if current_player_id != room.host_id or room.phase != "bunker_round_briefing":
+                    continue
+                start_round_speeches(room)
+                await broadcast_room(room)
+                await trigger_bot_actions(room)
 
             elif msg_type in ("start_voting", "skip_debate"):
                 if not current_room_code or current_room_code not in ROOMS:
@@ -1041,6 +1409,7 @@ async def ws_handler(websocket):
                     room.add_log(f"⏩ Командир завершил Раунд {room.round}. По правилам никто не изгоняется — переход к Раунду {room.round + 1}.")
                     advance_round(room)
                 await broadcast_room(room)
+                await trigger_bot_actions(room)
 
             elif msg_type == "extend_timer":
                 if not current_room_code or current_room_code not in ROOMS:
@@ -1075,6 +1444,7 @@ async def ws_handler(websocket):
                 room.add_log("👉 Командир принудительно передал ход следующему выжившему.")
                 next_player_turn(room)
                 await broadcast_room(room)
+                await trigger_bot_actions(room)
 
             elif msg_type == "finish_speech":
                 if not current_room_code or current_room_code not in ROOMS:
@@ -1085,10 +1455,19 @@ async def ws_handler(websocket):
                 if current_player_id != room.get_active_player_id():
                     continue
                 active_p = room.players.get(current_player_id)
+                rev_count = sum(1 for c in active_p.hand.values() if c.get("revealed", False))
+                if rev_count < room.round:
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "message": "Сначала вскройте карту раунда, чтобы подтвердить выбор перед бункером!"
+                    }, ensure_ascii=False))
+                    continue
+
                 p_name = active_p.name if active_p else "Игрок"
                 room.add_log(f"🎤 {p_name} досрочно завершил свою речь и передал ход.")
                 next_player_turn(room)
                 await broadcast_room(room)
+                await trigger_bot_actions(room)
 
             elif msg_type == "set_timer_duration":
                 if not current_room_code or current_room_code not in ROOMS:
@@ -1127,6 +1506,11 @@ async def ws_handler(websocket):
                     continue
 
                 target_id = data.get("target_id")
+                target_player = room.players.get(target_id)
+                if not target_player or target_player.is_exiled or getattr(target_player, "is_spectator", False):
+                    # Cannot vote for an exiled or spectator player
+                    continue
+
                 if getattr(room, "is_tie_revote", False) and room.tie_data:
                     tied_ids = room.tie_data.get("tied_candidate_ids", [])
                     if target_id not in tied_ids:
@@ -1135,12 +1519,6 @@ async def ws_handler(websocket):
                             "message": "Во 2-м туре можно голосовать только за участников ничьей!"
                         }, ensure_ascii=False))
                         continue
-
-                target_player = room.players.get(target_id)
-                if not target_player or target_player.is_exiled or getattr(target_player, "is_spectator", False):
-                    # Cannot vote for an exiled or spectator player
-                    continue
-
                 if target_player.immunity_this_round:
                     await websocket.send(json.dumps({
                         "type": "error",
@@ -1255,6 +1633,7 @@ async def ws_handler(websocket):
                     room.add_log(f"🔄 ВТОРОЙ ТУР: Объявлено переголосование! Голосуйте только за: {names_str}.")
                     room.start_timer(45)
                     await broadcast_room(room)
+                    await trigger_bot_actions(room)
 
             elif msg_type == "next_round_confirm":
                 if not current_room_code or current_room_code not in ROOMS:
@@ -1264,6 +1643,7 @@ async def ws_handler(websocket):
                     continue
                 advance_round(room)
                 await broadcast_room(room)
+                await trigger_bot_actions(room)
 
             elif msg_type in ("play_special", "host_play_special"):
                 if not current_room_code or current_room_code not in ROOMS:
