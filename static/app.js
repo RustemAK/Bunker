@@ -699,7 +699,6 @@
     const isHost = (gameState.host_id === gameState.my_id);
 
     lobbyPlayersList.innerHTML = '';
-    const isHost = (gameState.host_id === gameState.my_id);
 
     gameState.players.forEach(p => {
       const card = document.createElement('div');
