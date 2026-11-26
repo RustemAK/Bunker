@@ -325,15 +325,9 @@
             <!-- 6 player cards generated here as a compact list -->
           </div>
 
-          <!-- Special Condition Card -->
-          <div class="special-condition-panel glass-panel">
-            <div class="special-badge">⚡ ВАШ КОЗЫРЬ: ОСОБОЕ УСЛОВИЕ</div>
-            <h4 id="mySpecialName">Загрузка...</h4>
-            <p id="mySpecialDesc" class="special-desc">Описание условия...</p>
-            <div class="special-footer">
-              <span class="timing-tag" id="mySpecialTiming">В любой момент</span>
-              <button id="playSpecialBtn" class="btn btn-amber">РАЗЫГРАТЬ КОЗЫРЬ</button>
-            </div>
+          <!-- Special Condition Cards (2 per player) -->
+          <div id="mySpecialConditionsList" class="special-conditions-list">
+            <!-- Rendered dynamically -->
           </div>
         </div>
 
@@ -514,11 +508,7 @@
 
       <div id="offSecContent" class="off-sec-content hidden">
         <div id="offSecCardsList" class="dossier-cards-list"></div>
-        <div id="offSecSpecialBox" class="special-condition-panel glass-panel" style="margin-top: 14px;">
-          <div class="special-badge">⚡ ОСОБОЕ УСЛОВИЕ</div>
-          <h4 id="offSecSpecialName">...</h4>
-          <p id="offSecSpecialDesc" class="special-desc">...</p>
-        </div>
+        <div id="offSecSpecialsList" style="margin-top: 14px; display: flex; flex-direction: column; gap: 10px;"></div>
         <button id="offSecHideBtn" class="btn btn-danger btn-block" style="margin-top: 16px;">
           🙈 СКРЫТЬ КАРТЫ И ВЕРНУТЬ ТЕЛЕФОН
         </button>

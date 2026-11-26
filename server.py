@@ -64,11 +64,14 @@ class Player:
         self.is_exiled = False
         self.hand = {}  # category -> {card_data, revealed: bool}
         self.special_condition = None
+        self.special_conditions = []
         self.voted_for = None
         self.immunity_this_round = False
         self.triple_vote = False
         self.retaliation_active = False
         self.is_silenced = False
+        self.enemy_penalty_votes = 0
+        self.friend_ally_name = None
 
 # ================= TEST BOTS SYSTEM =================
 BOT_NAMES = [
@@ -436,10 +439,11 @@ class Room:
                         "revealed": False
                     }
 
-            # Special condition
-            spec = None
-            if (is_self or is_host_viewing_offline) and p.special_condition:
-                spec = p.special_condition
+            # Special conditions (2 per player)
+            specs_list = []
+            if is_self or is_host_viewing_offline:
+                specs_list = getattr(p, "special_conditions", []) or ([p.special_condition] if p.special_condition else [])
+            spec = specs_list[0] if specs_list else None
 
             p_entry = {
                 "id": p.id,
@@ -455,10 +459,13 @@ class Room:
                 "triple_vote": p.triple_vote,
                 "retaliation_active": p.retaliation_active,
                 "is_silenced": getattr(p, "is_silenced", False),
+                "enemy_penalty_votes": getattr(p, "enemy_penalty_votes", 0),
+                "friend_ally_name": getattr(p, "friend_ally_name", None),
                 "is_active_turn": (p.id == self.get_active_player_id() and self.status == "in_game" and self.phase == "turns"),
                 "has_voted": (p.voted_for is not None),
                 "hand": sanitized_hand,
-                "special_condition": spec
+                "special_condition": spec,
+                "special_conditions": specs_list
             }
             if is_host_viewing_offline:
                 p_entry["offline_full_hand"] = p.hand
@@ -589,8 +596,9 @@ def init_game(room):
     hlth_deck = safe_sample(CARDS_DB["health"], k=n)
     hob_deck = safe_sample(CARDS_DB["hobbies"], k=n)
     lug_deck = safe_sample(CARDS_DB["luggage"], k=n)
-    fct_deck = safe_sample(CARDS_DB["facts"], k=n)
-    spc_deck = safe_sample(CARDS_DB["special_conditions"], k=n)
+    fct_deck = safe_sample(CARDS_DB["facts"], k=2 * n)
+    phb_deck = safe_sample(CARDS_DB.get("phobias", []), k=n)
+    spc_deck = safe_sample(CARDS_DB["special_conditions"], k=2 * n)
 
     for i, pid in enumerate(p_keys):
         p = room.players[pid]
@@ -600,15 +608,23 @@ def init_game(room):
         p.triple_vote = False
         p.retaliation_active = False
         p.is_silenced = False
+        p.enemy_penalty_votes = 0
+        p.friend_ally_name = None
         p.hand = {
             "profession": {**prof_deck[i], "category": "profession", "revealed": False},
             "biology": {**bio_deck[i], "category": "biology", "revealed": False},
             "health": {**hlth_deck[i], "category": "health", "revealed": False},
             "hobby": {**hob_deck[i], "category": "hobby", "revealed": False},
             "luggage": {**lug_deck[i], "category": "luggage", "revealed": False},
-            "fact": {**fct_deck[i], "category": "fact", "revealed": False}
+            "fact": {**fct_deck[2 * i], "category": "fact", "revealed": False},
+            "fact2": {**fct_deck[2 * i + 1], "category": "fact2", "revealed": False},
+            "phobia": {**phb_deck[i], "category": "phobia", "revealed": False}
         }
-        p.special_condition = {**spc_deck[i], "played": False}
+        p.special_conditions = [
+            {**spc_deck[2 * i], "played": False},
+            {**spc_deck[2 * i + 1], "played": False}
+        ]
+        p.special_condition = p.special_conditions[0]
 
     bunker_capacity = room.get_bunker_capacity()
     room.phase = "briefing"
@@ -691,6 +707,14 @@ def resolve_voting(room):
             if tid not in voter_map:
                 voter_map[tid] = []
             voter_map[tid].append(f"Живое голосование ({cnt})")
+
+    for pid, p in room.players.items():
+        pen = getattr(p, "enemy_penalty_votes", 0)
+        if pen > 0 and not p.is_exiled and not getattr(p, "is_spectator", False) and not getattr(p, "immunity_this_round", False):
+            vote_counts[pid] = vote_counts.get(pid, 0) + pen
+            if pid not in voter_map:
+                voter_map[pid] = []
+            voter_map[pid].append(f"⚔️ Карта Врага (+{pen})")
 
     room.votes = {
         room.players[tid].name: {
@@ -818,6 +842,8 @@ def advance_round(room):
             p.immunity_this_round = False
             p.triple_vote = False
             p.is_silenced = False
+            p.enemy_penalty_votes = 0
+            p.friend_ally_name = None
         room.curfew_active = False
         room.tie_data = None
         room.is_tie_revote = False
@@ -942,7 +968,9 @@ def generate_bunker_ai_analysis(room, api_key_override=None):
             "health": p.hand.get("health", {}).get("name", "Неизвестно"),
             "hobby": p.hand.get("hobby", {}).get("name", "Неизвестно"),
             "luggage": p.hand.get("luggage", {}).get("name", "Неизвестно"),
-            "fact": p.hand.get("fact", {}).get("name", "Неизвестно")
+            "fact": p.hand.get("fact", {}).get("name", "Неизвестно"),
+            "fact2": p.hand.get("fact2", {}).get("name", "Неизвестно"),
+            "phobia": p.hand.get("phobia", {}).get("name", "Неизвестно")
         }
         if p.is_exiled:
             exiled.append(p_info)
@@ -1657,10 +1685,16 @@ async def ws_handler(websocket):
                         continue
                 else:
                     player = room.players.get(current_player_id)
-                if not player or not player.special_condition or player.special_condition.get("played", False):
+                if not player:
+                    continue
+                specs_list = getattr(player, "special_conditions", []) or ([player.special_condition] if player.special_condition else [])
+                spc_idx = int(data.get("special_index", 0))
+                if spc_idx < 0 or spc_idx >= len(specs_list):
+                    continue
+                spc = specs_list[spc_idx]
+                if not spc or spc.get("played", False):
                     continue
 
-                spc = player.special_condition
                 spc_id = spc.get("id")
                 spc["played"] = True
                 room.add_log(f"⚡ {player.name} разыграл Особое Условие: «{spc['name']}»!")
@@ -1963,6 +1997,127 @@ async def ws_handler(websocket):
                         room.add_log(f"🕊️ {player.name} заключил Пакт о ненападении с {target_player.name}! Оба игрока защищены от изгнания в этом раунде!")
                     else:
                         room.add_log(f"🕊️ {player.name} предложил пакт о ненападении, но союзник не выбран.")
+
+                # 31. Steal Luggage (take opponent's luggage without giving yours)
+                elif spc_id == "spc_steal_luggage":
+                    if target_player:
+                        stolen = target_player.hand["luggage"]
+                        curr_lug = player.hand["luggage"]
+                        curr_lug["name"] = f"{curr_lug['name']} + {stolen['name']}"
+                        curr_lug["desc"] = f"{curr_lug['desc']} Дополнительно (украдено): {stolen['desc']}"
+                        curr_lug["revealed"] = True
+                        target_player.hand["luggage"] = {
+                            "name": "Украдено (Пустые руки)",
+                            "badge": "Кража",
+                            "desc": "Весь багаж был тайно украден другим участником бункера!",
+                            "category": "luggage",
+                            "revealed": True
+                        }
+                        room.add_log(f"🥷 {player.name} украл Багаж «{stolen['name']}» у {target_player.name}!")
+                    else:
+                        room.add_log(f"🥷 {player.name} попытался украсть багаж, но цель не найдена.")
+
+                # 32. Friend Card (Alliance: mutual immunity + ally tag)
+                elif spc_id == "spc_friend_card":
+                    if target_player:
+                        player.immunity_this_round = True
+                        target_player.immunity_this_round = True
+                        player.friend_ally_name = target_player.name
+                        target_player.friend_ally_name = player.name
+                        room.add_log(f"🤝 {player.name} разыграл Карту Друга и выбрал союзником {target_player.name}! Оба защищены от изгнания в этом раунде!")
+                    else:
+                        room.add_log(f"🤝 {player.name} разыграл Карту Друга, но союзник не выбран.")
+
+                # 33. Enemy Card (+2 penalty votes against target)
+                elif spc_id == "spc_enemy_card":
+                    if target_player:
+                        target_player.enemy_penalty_votes = getattr(target_player, "enemy_penalty_votes", 0) + 2
+                        room.add_log(f"⚔️ {player.name} разыграл Карту Врага против {target_player.name}! Тот получает +2 штрафных голоса на голосовании!")
+                    else:
+                        room.add_log(f"⚔️ {player.name} разыграл Карту Врага, но цель не выбрана.")
+
+                # 34-36. Shuffle All Professions / Health / Phobias (Random for everyone!)
+                elif spc_id in ("spc_shuffle_all_professions", "spc_shuffle_all_health", "spc_shuffle_all_phobias"):
+                    cat_map = {
+                        "spc_shuffle_all_professions": ("profession", "Профессии", "🌪️"),
+                        "spc_shuffle_all_health": ("health", "карты Здоровья", "🦠"),
+                        "spc_shuffle_all_phobias": ("phobia", "Фобии", "🌀"),
+                    }
+                    cat_key, cat_label, ico = cat_map[spc_id]
+                    alive_ps = [p for p in room.get_active_players_list() if not p.is_exiled and cat_key in p.hand]
+                    if len(alive_ps) >= 2:
+                        cards_pool = [p.hand[cat_key] for p in alive_ps]
+                        random.shuffle(cards_pool)
+                        for idx_p, ap in enumerate(alive_ps):
+                            ap.hand[cat_key] = cards_pool[idx_p]
+                        room.add_log(f"{ico} {player.name} устроил глобальную встряску! Все {cat_label} случайным образом перемешаны между всеми выжившими!")
+                    else:
+                        room.add_log(f"{ico} {player.name} активировал перемешивание, но игроков слишком мало.")
+
+                # 37. Reroll Any Choice (player chooses which category to reroll)
+                elif spc_id == "spc_reroll_any_choice":
+                    chosen_cat = data.get("category") or "health"
+                    deck_key_map = {
+                        "profession": "professions",
+                        "biology": "biology",
+                        "health": "health",
+                        "hobby": "hobbies",
+                        "luggage": "luggage",
+                        "fact": "facts",
+                        "fact2": "facts",
+                        "phobia": "phobias",
+                    }
+                    db_key = deck_key_map.get(chosen_cat, "health")
+                    deck = CARDS_DB.get(db_key, [])
+                    if deck and chosen_cat in player.hand:
+                        used_ids = {p.hand[chosen_cat].get("id") for p in room.players.values() if chosen_cat in p.hand}
+                        avail = [c for c in deck if c.get("id") not in used_ids]
+                        new_c = random.choice(avail if avail else deck)
+                        was_rev = player.hand[chosen_cat].get("revealed", False)
+                        player.hand[chosen_cat] = {**new_c, "category": chosen_cat, "revealed": was_rev}
+                        room.add_log(f"🎯 {player.name} применил Точечную замену и перетянул карту категории «{chosen_cat}»!")
+
+                # 38-39. Rotate Luggage / Facts (Fixed circular shift!)
+                elif spc_id in ("spc_rotate_luggage", "spc_rotate_facts"):
+                    cat_key = "luggage" if spc_id == "spc_rotate_luggage" else "fact"
+                    label = "Багажа" if cat_key == "luggage" else "Фактов №1"
+                    ico = "🔄" if cat_key == "luggage" else "📜"
+                    alive_ps = [p for p in room.players.values() if not getattr(p, "is_spectator", False) and not p.is_exiled and cat_key in p.hand]
+                    if len(alive_ps) >= 2:
+                        orig_cards = [p.hand[cat_key] for p in alive_ps]
+                        for idx_p, ap in enumerate(alive_ps):
+                            ap.hand[cat_key] = orig_cards[(idx_p - 1) % len(alive_ps)]
+                        room.add_log(f"{ico} {player.name} запустил фиксированный сдвиг {label}! Карты перешли по кругу следующему игроку.")
+
+                # 40. Swap Phobia
+                elif spc_id == "spc_swap_phobia":
+                    if target_player and "phobia" in target_player.hand and "phobia" in player.hand:
+                        my_phb = player.hand["phobia"]
+                        their_phb = target_player.hand["phobia"]
+                        my_phb["revealed"] = True
+                        their_phb["revealed"] = True
+                        player.hand["phobia"] = their_phb
+                        target_player.hand["phobia"] = my_phb
+                        room.add_log(f"😱 {player.name} обменялся Фобиями с {target_player.name}! {player.name} получил «{their_phb['name']}».")
+
+                # 41. Cure Phobia
+                elif spc_id == "spc_cure_phobia":
+                    player.hand["phobia"] = {
+                        "name": "Отсутствие фобий (Стальные нервы)",
+                        "badge": "Иммунитет",
+                        "desc": "Психика полностью очищена гипнотерапией — никаких страхов и паники.",
+                        "category": "phobia",
+                        "revealed": True
+                    }
+                    room.add_log(f"🧠 {player.name} прошёл Гипнотерапию: Фобия заменена на «Стальные нервы»!")
+
+                # 42. Reroll Fact 2
+                elif spc_id == "spc_reroll_fact2":
+                    used_fct = {p.hand.get("fact2", {}).get("name") for p in room.players.values()}
+                    avail = [f for f in CARDS_DB["facts"] if f["name"] not in used_fct]
+                    new_fct = random.choice(avail if avail else CARDS_DB["facts"])
+                    player.hand["fact2"] = {**new_fct, "category": "fact2", "revealed": True}
+                    room.add_log(f"🕵️ {player.name} обновил Факт №2: «{new_fct['name']}»!")
 
                 await broadcast_room(room)
 

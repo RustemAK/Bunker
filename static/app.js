@@ -193,6 +193,8 @@
   let pingInterval = null;
   let currentOpenDossierId = null;
   let specialCastSourcePlayerId = null;
+  let specialCastIndex = 0;
+  let selectedSpecialChoiceCategory = null;
 
   // Offline / Host-Only Party Mode Elements
   const hostOfflineSetupBox = document.getElementById('hostOfflineSetupBox');
@@ -220,9 +222,7 @@
   const offSecRevealBtn = document.getElementById('offSecRevealBtn');
   const offSecContent = document.getElementById('offSecContent');
   const offSecCardsList = document.getElementById('offSecCardsList');
-  const offSecSpecialBox = document.getElementById('offSecSpecialBox');
-  const offSecSpecialName = document.getElementById('offSecSpecialName');
-  const offSecSpecialDesc = document.getElementById('offSecSpecialDesc');
+  const offSecSpecialsList = document.getElementById('offSecSpecialsList');
   const offSecHideBtn = document.getElementById('offSecHideBtn');
 
   const hostOfflineVotingConsole = document.getElementById('hostOfflineVotingConsole');
@@ -246,11 +246,8 @@
   const guidanceDesc = document.getElementById('guidanceDesc');
   const guidanceActionBtn = document.getElementById('guidanceActionBtn');
 
-  // Special Card
-  const mySpecialName = document.getElementById('mySpecialName');
-  const mySpecialDesc = document.getElementById('mySpecialDesc');
-  const mySpecialTiming = document.getElementById('mySpecialTiming');
-  const playSpecialBtn = document.getElementById('playSpecialBtn');
+  // Special Cards List (2 per player)
+  const mySpecialConditionsList = document.getElementById('mySpecialConditionsList');
 
   // Special Card Target Modal
   const specialTargetModal = document.getElementById('specialTargetModal');
@@ -1021,6 +1018,12 @@
       if (p.is_silenced) {
         statusHtml += ' <span class="tile-status" style="background: rgba(148, 163, 184, 0.2); border-color: #94a3b8; color: #94a3b8;">🔇 Молчит</span>';
       }
+      if (p.friend_ally_name) {
+        statusHtml += ` <span class="tile-status" style="background: rgba(16, 185, 129, 0.2); border-color: var(--color-emerald); color: var(--color-emerald);">🤝 Друг: ${escapeHtml(p.friend_ally_name)}</span>`;
+      }
+      if (p.enemy_penalty_votes > 0) {
+        statusHtml += ` <span class="tile-status" style="background: rgba(239, 68, 68, 0.25); border-color: var(--color-danger); color: var(--color-danger-light);">⚔️ Враг (+${p.enemy_penalty_votes})</span>`;
+      }
 
       // Summary of revealed cards
       let pillsHtml = '';
@@ -1069,7 +1072,7 @@
   // --- OFFLINE CARDS EXPORT & PASS-THE-PHONE VIEWER ---
   function formatOfflineCardsText(player) {
     const hand = player.offline_full_hand || player.hand || {};
-    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact', 'fact2', 'phobia'];
     let text = `☢️ БУНКЕР 3.3 — Карты игрока ${player.name} ${player.avatar}\n`;
     if (gameState && gameState.catastrophe) {
       text += `Катастрофа: ${gameState.catastrophe.name}\n`;
@@ -1081,9 +1084,10 @@
         text += `• ${translateCategory(cat)}: ${c.name} (${c.desc || ''})\n`;
       }
     });
-    if (player.special_condition) {
-      text += `\n⚡ Особое условие: ${player.special_condition.name} — ${player.special_condition.desc}\n`;
-    }
+    const specs = player.special_conditions || (player.special_condition ? [player.special_condition] : []);
+    specs.forEach((sp, idx) => {
+      text += `\n⚡ Особое условие №${idx + 1}: ${sp.name} — ${sp.desc}`;
+    });
     return text.trim();
   }
 
@@ -1124,7 +1128,7 @@
     offSecContent.classList.add('hidden');
 
     offSecCardsList.innerHTML = '';
-    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    const catOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact', 'fact2', 'phobia'];
     catOrder.forEach(cat => {
       const c = hand[cat];
       if (!c) return;
@@ -1138,12 +1142,19 @@
       offSecCardsList.appendChild(row);
     });
 
-    if (player.special_condition) {
-      offSecSpecialBox.classList.remove('hidden');
-      offSecSpecialName.textContent = player.special_condition.name;
-      offSecSpecialDesc.textContent = player.special_condition.desc;
-    } else {
-      offSecSpecialBox.classList.add('hidden');
+    if (offSecSpecialsList) {
+      offSecSpecialsList.innerHTML = '';
+      const specs = player.special_conditions || (player.special_condition ? [player.special_condition] : []);
+      specs.forEach((sp, idx) => {
+        const box = document.createElement('div');
+        box.className = 'special-condition-panel glass-panel';
+        box.innerHTML = `
+          <div class="special-badge">⚡ ОСОБОЕ УСЛОВИЕ №${idx + 1}</div>
+          <h4>${escapeHtml(sp.name)}</h4>
+          <p class="special-desc">${escapeHtml(sp.desc)}</p>
+        `;
+        offSecSpecialsList.appendChild(box);
+      });
     }
 
     offlineSecretModal.classList.remove('hidden');
@@ -1165,7 +1176,7 @@
 
     const handList = Object.entries(player.hand);
     const revCount = handList.filter(([_, c]) => c.revealed).length;
-    dosRevealedCount.textContent = `${revCount}/6`;
+    dosRevealedCount.textContent = `${revCount}/${handList.length || 8}`;
     dosTurnStatus.textContent = player.is_active_turn ? 'Открывает карту' : 'Ожидает';
 
     const isHost = (gameState.host_id === gameState.my_id);
@@ -1180,12 +1191,24 @@
           initAudio(); soundClick();
           openOfflineSecretModal(player);
         };
-        if (player.special_condition && !player.special_condition.played && !player.is_exiled) {
+        const specs = player.special_conditions || (player.special_condition ? [player.special_condition] : []);
+        const unplayed = specs.map((sp, i) => ({ sp, i })).filter(x => x.sp && !x.sp.played);
+        if (unplayed.length > 0 && !player.is_exiled) {
           dosOfflineSpecialBox.classList.remove('hidden');
-          dosPlaySpecialBtn.onclick = () => {
-            initAudio(); soundClick();
-            triggerSpecialCardForPlayer(player, true);
-          };
+          dosOfflineSpecialBox.innerHTML = `<span style="font-size: 0.8rem; color: var(--color-amber);">⚡ Особые карты игрока (${unplayed.length}):</span>`;
+          const btnWrap = document.createElement('div');
+          btnWrap.style.cssText = 'display:flex; gap:6px; flex-wrap:wrap;';
+          unplayed.forEach(({ sp, i }) => {
+            const b = document.createElement('button');
+            b.className = 'btn btn-amber btn-sm';
+            b.textContent = `⚡ №${i + 1}: ${sp.name}`;
+            b.addEventListener('click', () => {
+              initAudio(); soundClick();
+              triggerSpecialCardForPlayer(player, true, i);
+            });
+            btnWrap.appendChild(b);
+          });
+          dosOfflineSpecialBox.appendChild(btnWrap);
         } else {
           dosOfflineSpecialBox.classList.add('hidden');
         }
@@ -1195,7 +1218,7 @@
     }
 
     dosCardsList.innerHTML = '';
-    const categoryOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    const categoryOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact', 'fact2', 'phobia'];
 
     categoryOrder.forEach(cat => {
       const card = player.hand[cat];
@@ -1284,10 +1307,22 @@
       tip: 'Расскажите, как ваш предмет решит одну из критических проблем в бункере.'
     },
     fact: {
-      name: 'Факт',
+      name: 'Факт №1',
       icon: '📜',
       role: 'Уникальный жизненный опыт, черта характера или тайна прошлого',
       tip: 'Используйте свой уникальный опыт, чтобы расположить к себе совет убежища.'
+    },
+    fact2: {
+      name: 'Факт №2',
+      icon: '🕵️',
+      role: 'Вторая секретная деталь биографии или скрытый навык выжившего',
+      tip: 'Дополнительный аргумент в вашу пользу или неожиданный поворот на дебатах.'
+    },
+    phobia: {
+      name: 'Фобия',
+      icon: '😱',
+      role: 'Психологический страх, который может проявиться в замкнутом бункере',
+      tip: 'Убедите группу, что ваша фобия не помешает выполнению задач внутри убежища.'
     }
   };
 
@@ -1369,7 +1404,7 @@
     }
 
     myCardsGrid.innerHTML = '';
-    const categoryOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact'];
+    const categoryOrder = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact', 'fact2', 'phobia'];
 
     categoryOrder.forEach(cat => {
       const card = me.hand[cat];
@@ -1436,25 +1471,42 @@
       myCardsGrid.appendChild(cardEl);
     });
 
-    // Special Condition card
-    if (me.special_condition) {
-      mySpecialName.textContent = me.special_condition.name;
-      mySpecialDesc.textContent = me.special_condition.desc;
-      mySpecialTiming.textContent = me.special_condition.timing || 'В любой момент';
-
-      if (me.special_condition.played) {
-        playSpecialBtn.disabled = true;
-        playSpecialBtn.textContent = 'УЖЕ СЫГРАНО';
-      } else {
-        playSpecialBtn.disabled = false;
-        playSpecialBtn.textContent = 'РАЗЫГРАТЬ КОЗЫРЬ';
-      }
+    // Special Condition cards (2 per player)
+    if (mySpecialConditionsList) {
+      mySpecialConditionsList.innerHTML = '';
+      const specs = me.special_conditions || (me.special_condition ? [me.special_condition] : []);
+      specs.forEach((sp, idx) => {
+        if (!sp) return;
+        const panel = document.createElement('div');
+        panel.className = 'special-condition-panel glass-panel';
+        panel.style.marginBottom = '12px';
+        panel.innerHTML = `
+          <div class="special-badge">⚡ ВАШ КОЗЫРЬ №${idx + 1}: ОСОБОЕ УСЛОВИЕ</div>
+          <h4>${escapeHtml(sp.name)}</h4>
+          <p class="special-desc">${escapeHtml(sp.desc)}</p>
+          <div class="special-footer">
+            <span class="timing-tag">${escapeHtml(sp.timing || 'В любой момент')}</span>
+            <button class="btn btn-amber play-spec-idx-btn" ${sp.played ? 'disabled' : ''}>
+              ${sp.played ? 'УЖЕ СЫГРАНО' : `РАЗЫГРАТЬ КОЗЫРЬ №${idx + 1}`}
+            </button>
+          </div>
+        `;
+        if (!sp.played) {
+          panel.querySelector('.play-spec-idx-btn').addEventListener('click', () => {
+            triggerSpecialCardForPlayer(me, false, idx);
+          });
+        }
+        mySpecialConditionsList.appendChild(panel);
+      });
     }
   }
 
-  function triggerSpecialCardForPlayer(sourcePlayer, isHostForOffline) {
-    if (!sourcePlayer || !sourcePlayer.special_condition || sourcePlayer.special_condition.played) return;
-    const spc = sourcePlayer.special_condition;
+  function triggerSpecialCardForPlayer(sourcePlayer, isHostForOffline, specialIndex = 0) {
+    if (!sourcePlayer) return;
+    const specs = sourcePlayer.special_conditions || (sourcePlayer.special_condition ? [sourcePlayer.special_condition] : []);
+    const spc = specs[specialIndex];
+    if (!spc || spc.played) return;
+
     const needsTarget = [
       'spc_swap_luggage',
       'spc_lie_detector',
@@ -1466,8 +1518,52 @@
       'spc_swap_fact',
       'spc_disarm_luggage',
       'spc_copy_profession',
-      'spc_peace_treaty'
+      'spc_peace_treaty',
+      'spc_steal_luggage',
+      'spc_friend_card',
+      'spc_enemy_card',
+      'spc_swap_phobia'
     ].includes(spc.id);
+
+    const needsCategoryChoice = (spc.id === 'spc_reroll_any_choice');
+
+    if (needsCategoryChoice) {
+      specialCastSourcePlayerId = isHostForOffline ? sourcePlayer.id : null;
+      specialCastIndex = specialIndex;
+      specialModalTitle.textContent = spc.name;
+      specialModalPrompt.textContent = 'Выберите, какую характеристику вы хотите заменить на новую из колоды:';
+      specialTargetsList.innerHTML = '';
+      selectedSpecialTargetId = null;
+      selectedSpecialChoiceCategory = null;
+      confirmSpecialTargetBtn.disabled = true;
+
+      const cats = ['profession', 'biology', 'health', 'hobby', 'luggage', 'fact', 'fact2', 'phobia'];
+      cats.forEach(cat => {
+        const card = (sourcePlayer.offline_full_hand || sourcePlayer.hand || {})[cat];
+        const item = document.createElement('div');
+        item.className = 'candidate-item';
+        item.innerHTML = `
+          <span style="font-size: 1.5rem;">${(CATEGORY_META[cat] && CATEGORY_META[cat].icon) || '📋'}</span>
+          <div>
+            <strong style="color: #fff;">${translateCategory(cat)}</strong>
+            <div style="font-size: 0.8rem; color: var(--color-amber);">
+              ${card && card.name ? escapeHtml(card.name) : 'Скрытая карта'}
+            </div>
+          </div>
+        `;
+        item.addEventListener('click', () => {
+          initAudio(); soundClick();
+          specialTargetsList.querySelectorAll('.candidate-item').forEach(el => el.classList.remove('selected'));
+          item.classList.add('selected');
+          selectedSpecialChoiceCategory = cat;
+          confirmSpecialTargetBtn.disabled = false;
+        });
+        specialTargetsList.appendChild(item);
+      });
+      specialTargetModal.classList.remove('hidden');
+      return;
+    }
+
     const aliveOpponents = gameState.players.filter(p => !p.is_exiled && p.id !== sourcePlayer.id);
 
     if (needsTarget) {
@@ -1480,9 +1576,9 @@
           initAudio();
           soundAlarm();
           if (isHostForOffline) {
-            ws.send(jsonStr({ action: 'host_play_special', player_id: sourcePlayer.id, target_id: aliveOpponents[0].id }));
+            safeSend({ action: 'host_play_special', player_id: sourcePlayer.id, special_index: specialIndex, target_id: aliveOpponents[0].id });
           } else {
-            ws.send(jsonStr({ action: 'play_special', target_id: aliveOpponents[0].id }));
+            safeSend({ action: 'play_special', special_index: specialIndex, target_id: aliveOpponents[0].id });
           }
         }
         return;
@@ -1490,6 +1586,8 @@
 
       // Open target modal
       specialCastSourcePlayerId = isHostForOffline ? sourcePlayer.id : null;
+      specialCastIndex = specialIndex;
+      selectedSpecialChoiceCategory = null;
       specialModalTitle.textContent = spc.name;
       specialModalPrompt.textContent = (isHostForOffline ? `[За ${sourcePlayer.name}] ` : '') + spc.desc;
       specialTargetsList.innerHTML = '';
@@ -1525,30 +1623,29 @@
         initAudio();
         soundAlarm();
         if (isHostForOffline) {
-          ws.send(jsonStr({ action: 'host_play_special', player_id: sourcePlayer.id }));
+          safeSend({ action: 'host_play_special', player_id: sourcePlayer.id, special_index: specialIndex });
         } else {
-          ws.send(jsonStr({ action: 'play_special' }));
+          safeSend({ action: 'play_special', special_index: specialIndex });
         }
       }
     }
   }
 
-  playSpecialBtn.addEventListener('click', () => {
-    const me = gameState.players.find(p => p.id === gameState.my_id);
-    triggerSpecialCardForPlayer(me, false);
-  });
-
   if (confirmSpecialTargetBtn) {
     confirmSpecialTargetBtn.addEventListener('click', () => {
-      if (!selectedSpecialTargetId) return;
+      if (!selectedSpecialTargetId && !selectedSpecialChoiceCategory) return;
       initAudio();
       soundAlarm();
-      if (specialCastSourcePlayerId) {
-        ws.send(jsonStr({ action: 'host_play_special', player_id: specialCastSourcePlayerId, target_id: selectedSpecialTargetId }));
-      } else {
-        ws.send(jsonStr({ action: 'play_special', target_id: selectedSpecialTargetId }));
-      }
+      const payload = {
+        action: specialCastSourcePlayerId ? 'host_play_special' : 'play_special',
+        special_index: specialCastIndex
+      };
+      if (specialCastSourcePlayerId) payload.player_id = specialCastSourcePlayerId;
+      if (selectedSpecialTargetId) payload.target_id = selectedSpecialTargetId;
+      if (selectedSpecialChoiceCategory) payload.category = selectedSpecialChoiceCategory;
+      safeSend(payload);
       specialCastSourcePlayerId = null;
+      selectedSpecialChoiceCategory = null;
       specialTargetModal.classList.add('hidden');
     });
   }
@@ -2015,7 +2112,9 @@
       health: 'Здоровье',
       hobby: 'Хобби',
       luggage: 'Багаж',
-      fact: 'Факт'
+      fact: 'Факт №1',
+      fact2: 'Факт №2',
+      phobia: 'Фобия'
     };
     return map[cat] || cat;
   }
